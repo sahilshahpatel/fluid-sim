@@ -5,7 +5,7 @@ precision highp float;
 precision mediump float;
 #endif
 
-#define DEBUG;
+#define DEBUG
 
 uniform sampler2D uPreviousFrame;
 in vec2 fragUV;

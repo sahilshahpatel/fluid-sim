@@ -15,6 +15,8 @@ class FluidSimRenderer {
         this.previousTime = 0;
         this.deltaTime = 0;
 
+        this.uReset = 1;
+
         // Naming conventions based on names in shader code
         this.uniforms = {
             // Viewport dimensions to get texel coordinates
@@ -36,7 +38,14 @@ class FluidSimRenderer {
                 location: undefined,
                 value: () => this.deltaTime,
                 set: gl.uniform1f,
-            }
+            },
+
+            // Resets the fluid container
+            uReset: {
+                location: undefined,
+                value: () => {if(this.uReset > 0){let tmp = this.uReset; this.uReset = 0; return tmp;}},
+                set: gl.uniform1i,
+            },
         }
     }
 
@@ -79,8 +88,8 @@ class FluidSimRenderer {
                     // TODO: Should I set these to gl.LINEAR instead of gl.NEAREST to do bilinear interpolation for me?
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
                     
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.FLOAT, null);
                 }
@@ -196,8 +205,7 @@ class FluidSimRenderer {
     }
 
     reset(){
-        // TODO: clear the previous frame buffer to some initial state
-        this.frameTimes = [];
+        this.uReset = 1; // TODO: allow for multiple reset presets
     }
 
     setUniforms(uniforms){
