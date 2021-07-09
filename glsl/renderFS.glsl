@@ -25,7 +25,7 @@ void main(void){
     fragColor = texture(uPreviousFrame, fragUV);
 #else
     vec4 background = vec4(0.02, 0.2, 0.5, 1);
-    vec4 fluid = vec4(1, 1, 1, 1);
+    vec4 fluid = vec4(0.75, 1, 1, 1);
 
     float density = texture(uPreviousFrame, fragUV).w;
 

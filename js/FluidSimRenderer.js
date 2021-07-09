@@ -17,13 +17,15 @@ class FluidSimRenderer {
         this.deltaTime = 0;
 
         this.uReset = 1;
+        this.uMode = 0;
+        this.uDiffusion = 1;
 
         // Naming conventions based on names in shader code
         this.uniforms = {
             // Viewport dimensions to get texel coordinates
             uResolution: {
                 location: undefined,
-                value: () => [canvas.width - 1, canvas.height - 1],
+                value: () => [canvas.width, canvas.height],
                 set: gl.uniform2fv,
             },
 
@@ -51,8 +53,22 @@ class FluidSimRenderer {
             // Resets the fluid container
             uReset: {
                 location: undefined,
-                value: () => {if(this.uReset > 0){let tmp = this.uReset; this.uReset = 0; return tmp;}},
+                value: () => this.uReset,
                 set: gl.uniform1i,
+            },
+
+            // Sets the mode for the simulator
+            uMode: {
+                location: undefined,
+                value: () => this.uMode,
+                set: gl.uniform1i,
+            },
+
+            // Sets the diffusion factor
+            uDiffusion: {
+                location: undefined,
+                value: () => this.uDiffusion,
+                set: gl.uniform1f,
             },
         }
     }
@@ -111,11 +127,10 @@ class FluidSimRenderer {
                     gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[i]);
 
                     // See https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glTexParameter.xhtml for details
-                    // TODO: Should I set these to gl.LINEAR instead of gl.NEAREST to do bilinear interpolation for me?
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
                     
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.FLOAT, allZeros);
                 }
@@ -158,14 +173,28 @@ class FluidSimRenderer {
         gl.vertexAttribPointer(this.simProgram.vertexPositionAttribute, 
                                this.vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
-        // Send all necessary constants to shader
+        // Perform all render calls
+        this.diffuse();
+        this.advect();
+        this.project();
+
+        // Unbind to be safe
+        gl.bindVertexArray(null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        // Disable reset flag if it was used
+        this.uReset = 0;
+    }
+
+    diffuse() {
+        let gl = this.gl;
+
+        // Send uniforms        
+        this.uMode = 0;
         this.setUniforms(this.uniforms);
             
-        // Clear the screen.
+        // Clear the screen
         gl.clear(gl.COLOR_BUFFER_BIT);
-    
-        // Use the vertex array object that we set up.
-        gl.bindVertexArray(this.vertexArrayObject);
 
         // Send texture of previous frame
         gl.activeTexture(gl.TEXTURE0 + this.uniforms.uPreviousFrame.value());
@@ -189,18 +218,27 @@ class FluidSimRenderer {
             // Switch iterationTextures
             this.currIterationTexture = 1 - this.currIterationTexture;
         }
+    }
 
-        // Perform a final draw to frame texture
+    advect(){
+        let gl = this.gl;
+
+        // Perform advection step
+        this.uMode = 1;
+        this.setUniforms(this.uniforms);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+        gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);
+        gl.activeTexture(gl.TEXTURE0 + this.uniforms.uPreviousFrame.value());
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.frameTextures[1 - this.currFrameTexture], 0);
         gl.drawArrays(gl.TRIANGLES, 0, this.vertexPositionBuffer.numberOfItems);
-        
-        // Unbind to be safe
-        gl.bindVertexArray(null);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         // Switch frameTextures
         this.currFrameTexture = 1 - this.currFrameTexture;
+    }
+
+    project(){
+        let gl = this.gl;
+        // Pass
     }
 
     /* Run the Render Shader to display the fluid on screen */
@@ -251,7 +289,7 @@ class FluidSimRenderer {
     }
 
     reset(){
-        this.uReset = 1; // TODO: allow for multiple reset presets
+        this.uReset = 2; // TODO: allow for multiple reset presets (maybe use a dropdown instead of button?)
     }
 
     setUniforms(uniforms){
@@ -261,7 +299,7 @@ class FluidSimRenderer {
             let keys = Object.keys(uniform);
             if(keys.includes('location'), keys.includes('value'), keys.includes('set')){
                 // This is a uniform, add it
-                uniform.set.call(gl, uniform.location, uniform.value()); // TODO: do I need to use uniform.value.bind(this).call()?
+                uniform.set.call(gl, uniform.location, uniform.value());
             } else {
                 // This is not yet a uniform (might be struct), recurse
                 this.setUniforms(uniform);
