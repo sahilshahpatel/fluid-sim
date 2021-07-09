@@ -79,8 +79,8 @@ class FluidSimRenderer {
                 this.vertexArrayObject = gl.createVertexArray();
                 gl.bindVertexArray(this.vertexArrayObject);
 
-                gl.clearColor(0, 0, 0, 1);
                 this.framebuffer = gl.createFramebuffer();
+                this.iterationFramebuffer = gl.createFramebuffer();
 
                 // Create two textures to hold last frame and current frame (adopted from http://madebyevan.com/webgl-path-tracing/webgl-path-tracing.js)
                 this.frameTextures = [];
@@ -171,18 +171,23 @@ class FluidSimRenderer {
         gl.activeTexture(gl.TEXTURE0 + this.uniforms.uPreviousFrame.value());
         gl.bindTexture(gl.TEXTURE_2D, this.frameTextures[this.currFrameTexture]);
 
-        // Send texture of previous iteration
+        // In our loop we will be working with the uPreviousIteration texture
         gl.activeTexture(gl.TEXTURE0 + this.uniforms.uPreviousIteration.value());
-        gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);
 
         // Perform Gauss-Seidel with multiple iterations (drawing to iteration texture)
+        // Start with a blank (all-0) texture
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.iterationFramebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.iterationTextures[1 - this.currIterationTexture], 0);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
         for(let i = 0; i < 10; i++){
-            // TODO: It seems like this isn't properly drawing out to the iteration texture (i.e. subsequent iterations don't see this output)
-
-            // Perform a final draw to frame texture
-            gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+            // Set up input/output textures and draw
+            gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.iterationTextures[1 - this.currIterationTexture], 0);
             gl.drawArrays(gl.TRIANGLES, 0, this.vertexPositionBuffer.numberOfItems);
+
+            // Switch iterationTextures
+            this.currIterationTexture = 1 - this.currIterationTexture;
         }
 
         // Perform a final draw to frame texture
@@ -194,9 +199,8 @@ class FluidSimRenderer {
         gl.bindVertexArray(null);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // Switch iteration- and frame-textures
+        // Switch frameTextures
         this.currFrameTexture = 1 - this.currFrameTexture;
-        this.currIterationTexture = 1 - this.currIterationTexture;
     }
 
     /* Run the Render Shader to display the fluid on screen */
@@ -217,6 +221,7 @@ class FluidSimRenderer {
         gl.bindTexture(gl.TEXTURE_2D, this.frameTextures[this.currFrameTexture]);
 
         /* Draw */
+        gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
         gl.bindVertexArray(this.vertexArrayObject);
         gl.drawArrays(gl.TRIANGLES, 0, this.vertexPositionBuffer.numberOfItems);
