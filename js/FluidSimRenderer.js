@@ -9,7 +9,8 @@ class FluidSimRenderer {
             return;
         }
 
-        this.currFramebuffer = 0;
+        this.currFrameTexture = 0;
+        this.currIterationTexture = 0;
         this.requestAnimationFrameID = undefined;
 
         this.previousTime = 0;
@@ -22,7 +23,7 @@ class FluidSimRenderer {
             // Viewport dimensions to get texel coordinates
             uResolution: {
                 location: undefined,
-                value: () => [canvas.width, canvas.height],
+                value: () => [canvas.width - 1, canvas.height - 1],
                 set: gl.uniform2fv,
             },
 
@@ -33,10 +34,17 @@ class FluidSimRenderer {
                 set: gl.uniform1i,
             },
 
+            // Previous Gauss-Seidel iteration data
+            uPreviousIteration: {
+                location: undefined,
+                value: () => 1,
+                set: gl.uniform1i,
+            },
+
             // Time passed
             uDeltaTime: {
                 location: undefined,
-                value: () => this.deltaTime,
+                value: () => this.deltaTime / 1e3,
                 set: gl.uniform1f,
             },
 
@@ -88,10 +96,28 @@ class FluidSimRenderer {
                     // TODO: Should I set these to gl.LINEAR instead of gl.NEAREST to do bilinear interpolation for me?
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+                    
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.FLOAT, null);
+                }
+                
+                // Now do the same but for the iteration textures
+                this.iterationTextures = [];
+                let allZeros = new Float32Array(this.canvas.width * this.canvas.height * 4).fill(0);
+                for(let i = 0; i < 2; i++){
+                    this.iterationTextures.push(gl.createTexture());
+                    gl.activeTexture(gl.TEXTURE0 + this.uniforms.uPreviousIteration.value());
+                    gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[i]);
+
+                    // See https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glTexParameter.xhtml for details
+                    // TODO: Should I set these to gl.LINEAR instead of gl.NEAREST to do bilinear interpolation for me?
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
                     
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.FLOAT, null);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.FLOAT, allZeros);
                 }
 
                 /* Set up vertex position buffer */
@@ -143,19 +169,34 @@ class FluidSimRenderer {
 
         // Send texture of previous frame
         gl.activeTexture(gl.TEXTURE0 + this.uniforms.uPreviousFrame.value());
-        gl.bindTexture(gl.TEXTURE_2D, this.frameTextures[this.currFramebuffer]);
+        gl.bindTexture(gl.TEXTURE_2D, this.frameTextures[this.currFrameTexture]);
 
-        // Draw to frame buffer
+        // Send texture of previous iteration
+        gl.activeTexture(gl.TEXTURE0 + this.uniforms.uPreviousIteration.value());
+        gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);
+
+        // Perform Gauss-Seidel with multiple iterations (drawing to iteration texture)
+        for(let i = 0; i < 10; i++){
+            // TODO: It seems like this isn't properly drawing out to the iteration texture (i.e. subsequent iterations don't see this output)
+
+            // Perform a final draw to frame texture
+            gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.iterationTextures[1 - this.currIterationTexture], 0);
+            gl.drawArrays(gl.TRIANGLES, 0, this.vertexPositionBuffer.numberOfItems);
+        }
+
+        // Perform a final draw to frame texture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.frameTextures[1 - this.currFramebuffer], 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.frameTextures[1 - this.currFrameTexture], 0);
         gl.drawArrays(gl.TRIANGLES, 0, this.vertexPositionBuffer.numberOfItems);
         
         // Unbind to be safe
         gl.bindVertexArray(null);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // Switch frameTextures
-        this.currFramebuffer = 1 - this.currFramebuffer;
+        // Switch iteration- and frame-textures
+        this.currFrameTexture = 1 - this.currFrameTexture;
+        this.currIterationTexture = 1 - this.currIterationTexture;
     }
 
     /* Run the Render Shader to display the fluid on screen */
@@ -173,7 +214,7 @@ class FluidSimRenderer {
                                this.vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
         /* Set uniforms */
-        gl.bindTexture(gl.TEXTURE_2D, this.frameTextures[this.currFramebuffer]);
+        gl.bindTexture(gl.TEXTURE_2D, this.frameTextures[this.currFrameTexture]);
 
         /* Draw */
         gl.clear(gl.COLOR_BUFFER_BIT);
