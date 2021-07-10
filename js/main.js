@@ -12,7 +12,7 @@ window.addEventListener("load", () => {
     /* Set up controls */
     let resetButton = document.getElementById("resetButton");
     resetButton.addEventListener("click", () => {
-        simulator.reset();
+        simulator.uResetType = 2;
     });
 
     let diffusionSlider = document.getElementById("uDiffusion");

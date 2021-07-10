@@ -10,19 +10,9 @@ uniform sampler2D uPreviousIteration;   // Data from last iteration of Gauss-Sei
 uniform vec2 uResolution;               // Canvas resolution - 1 for converting to "integer indices"
 uniform float uDeltaTime;               // Time since last frame
 uniform float uDiffusion;               // The diffusion factor
-uniform int uReset;                     // Reset flag
-uniform int uMode;                      // Mode selector (diffusion, advection, divergence-correction)
 in vec2 fragUV;                         // Fragment position with [0, 1] coordinates and bottom-left origin
 
 out vec4 fragColor;                     // The final color for this fragment
-
-/* Structures and Constants */
-const int RESET_NONE = 0;
-const int RESET_CENTER = 1;
-const int RESET_CORNER = 2;
-const int MODE_DIFFUSION = 0;
-const int MODE_ADVECTION = 1;
-const int MODE_PROJECTION = 2;
 
 /* Global Variables */
 vec2 fragXY;                            // "World space" coordinates (i.e. the would-be index into the frame buffer)
@@ -32,7 +22,6 @@ vec4 previousIterationData;
 
 /* Function List */
 vec4 diffusion(void);
-vec4 advection(void);
 
 /** void main(void)
 DESCRIPTION: The main function of the fragment shader. Implements one iteration of Gauss-Seidel approximation.
@@ -52,37 +41,10 @@ void main(void){
     fragST = fragUV * uResolution;
     fragXY = fragST - 0.5;
 
-
-    // If the reset flag is high, output a known initial state. Otherwise, proceed
-    switch(uReset){
-        case RESET_NONE:
-        break;
-
-        case RESET_CENTER:
-        fragColor = vec4(0, 0, 0, 1. - step(0.1, length(fragUV - 0.5)));
-        return;
-
-        case RESET_CORNER:
-        fragColor = vec4(1, 1, 0, 1. - step(2., length(fragXY)));
-        return;
-    }
-
     previousFrameData = texture(uPreviousFrame, fragUV);
     previousIterationData = texture(uPreviousIteration, fragUV);
     
-    /* This shader is used multiple times for different purposes, so we need to check which mode we're in */
-    switch(uMode){
-        case MODE_DIFFUSION:
-        fragColor = diffusion();
-        return;
-
-        case MODE_ADVECTION:
-        fragColor = advection();
-        return;
-
-        case MODE_PROJECTION:
-        return;
-    }
+    fragColor = diffusion();
 }
 
 
@@ -114,29 +76,4 @@ vec4 diffusion(void){
 
     vec4 d_n = (d_c + k * s_n) / (1.0 + k);
     return d_n;
-}
-
-
-/** vec4 advection(void)
-DESCRIPTION: Implements advection for all fluid properties (including density and velocity). Advection is the 
-             process by which properties move along with velocity. 
-INPUTS:      None
-OUTPUTS:     The vec4 of properties for this fragment on the next frame after advection
-*/
-vec4 advection(void){
-    // In advection it is again easiest to go backwards. We will find the spot where fluid will flow into the fragment.
-    vec2 source = fragXY - previousFrameData.xy * uDeltaTime;
-
-    // The source may not be just one grid cell, so we will use bilinear interpolation
-    vec2 i = floor(source) + 0.5; // convert back to ST before texture() call
-    vec2 j = fract(source);
-
-    vec4 a = texture(uPreviousIteration,  i / uResolution);
-    vec4 b = texture(uPreviousIteration, (i + vec2(1, 0)) / uResolution);
-    vec4 c = texture(uPreviousIteration, (i + vec2(0, 1)) / uResolution);
-    vec4 d = texture(uPreviousIteration, (i + vec2(1, 1)) / uResolution);
-
-    vec4 inFlow = mix(mix(a, b, j.x), mix(c, d, j.x), j.y);
-
-    return inFlow;
 }
