@@ -10,9 +10,9 @@ window.addEventListener("load", () => {
     });
 
     /* Set up controls */
-    let resetButton = document.getElementById("resetButton");
-    resetButton.addEventListener("click", () => {
-        simulator.uResetType = 2;
+    let resetOptions = document.getElementById("resetOptions");
+    resetOptions.querySelectorAll(".dropdown-item").forEach((opt, i) => {
+        opt.addEventListener("click", () => {simulator.uResetType = i+1;});
     });
 
     let diffusionSlider = document.getElementById("uDiffusion");

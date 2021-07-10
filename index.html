@@ -28,7 +28,15 @@
                     <div class="card">
                         <div class="card-body">
                             <canvas id="canvas" width="16" height="10" class="card-img mb-2 pixelated"></canvas>
-                            <button id="resetButton" class="btn btn-primary">Reset</button>
+                            <div class="dropdown">
+                                <button class="btn btn-primary dropdown-toggle" type="button" id="resetDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                  Reset
+                                </button>
+                                <ul id="resetOptions" class="dropdown-menu" aria-labelledby="resetDropdown">
+                                  <li><button class="dropdown-item" >Center Circle</a></li>
+                                  <li><button class="dropdown-item" >Lower-Left Run</a></li>
+                                </ul>
+                              </div>
                         </div>
                     </div>
                 </div>
