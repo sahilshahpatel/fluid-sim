@@ -83,13 +83,14 @@ class FluidSimRenderer {
                 let basicVS = loadShaderFromSource(gl, basicVSource, "x-shader/x-vertex");
                 let simFS = loadShaderFromSource(gl, simFSource, "x-shader/x-fragment");
 
-                this.createSimProgram(basicVS, simFS);
+                this.simProgram = createShaderProgram(gl, basicVS, simFS);
                 if(!this.simProgram) reject();
+                initUniforms(gl, this.uniforms, this.simProgram);
 
                 // RenderVS is also the basic VS
                 let renderFS = loadShaderFromSource(gl, renderFSource, "x-shader/x-fragment");
 
-                this.createRenderProgram(basicVS, renderFS);
+                this.renderProgram = createShaderProgram(gl, basicVS, renderFS);
                 if(!this.renderProgram) reject();
 
                 this.vertexArrayObject = gl.createVertexArray();
@@ -191,7 +192,7 @@ class FluidSimRenderer {
 
         // Send uniforms        
         this.uMode = 0;
-        this.setUniforms(this.uniforms);
+        setUniforms(gl, this.uniforms);
             
         // Clear the screen
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -225,7 +226,7 @@ class FluidSimRenderer {
 
         // Perform advection step
         this.uMode = 1;
-        this.setUniforms(this.uniforms);
+        setUniforms(gl, this.uniforms);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);
         gl.activeTexture(gl.TEXTURE0 + this.uniforms.uPreviousFrame.value());
@@ -290,76 +291,5 @@ class FluidSimRenderer {
 
     reset(){
         this.uReset = 2; // TODO: allow for multiple reset presets (maybe use a dropdown instead of button?)
-    }
-
-    setUniforms(uniforms){
-        let gl = this.gl;
-
-        for(const [name, uniform] of Object.entries(uniforms)){
-            let keys = Object.keys(uniform);
-            if(keys.includes('location'), keys.includes('value'), keys.includes('set')){
-                // This is a uniform, add it
-                uniform.set.call(gl, uniform.location, uniform.value());
-            } else {
-                // This is not yet a uniform (might be struct), recurse
-                this.setUniforms(uniform);
-            }
-        }
-    }
-
-    initUniforms(uniforms, program, prefix = ''){
-        let gl = this.gl;
-
-        for(const [name, uniform] of Object.entries(uniforms)){
-            let keys = Object.keys(uniform);
-            if(keys.includes('location'), keys.includes('value'), keys.includes('set')){
-                // This is a uniform, set it's location
-                uniform.location = gl.getUniformLocation(program, prefix + name);
-            } else {
-                // This is not yet a uniform (might be struct), recurse
-                this.initUniforms(uniform, program, prefix + name + '.');
-            }
-        }
-    }
-
-    createSimProgram(vertexShader, fragmentShader){
-        let gl = this.gl;
-
-        // Link the shaders together into a program.
-        this.simProgram = gl.createProgram();
-        gl.attachShader(this.simProgram, vertexShader);
-        gl.attachShader(this.simProgram, fragmentShader);
-        gl.linkProgram(this.simProgram);
-
-        if (!gl.getProgramParameter(this.simProgram, gl.LINK_STATUS)) {
-            console.error("Failed to setup shaders");
-        }
-        else{
-            /* Create shader attribtues */ 
-            this.simProgram.vertexPositionAttribute =
-            gl.getAttribLocation(this.simProgram, "aVertexPosition");
-
-            /* Create shader uniforms */
-            this.initUniforms(this.uniforms, this.simProgram);
-        }
-    }
-
-    createRenderProgram(vertexShader, fragmentShader){
-        let gl = this.gl;
-
-        // Link the shaders together into a program.
-        this.renderProgram = gl.createProgram();
-        gl.attachShader(this.renderProgram, vertexShader);
-        gl.attachShader(this.renderProgram, fragmentShader);
-        gl.linkProgram(this.renderProgram);
-
-        if (!gl.getProgramParameter(this.renderProgram, gl.LINK_STATUS)) {
-            console.error("Failed to setup shaders");
-        }
-        else{
-            /* Create shader attribtues */ 
-            this.renderProgram.vertexPositionAttribute =
-            gl.getAttribLocation(this.renderProgram, "aVertexPosition");
-        }
     }
 }
