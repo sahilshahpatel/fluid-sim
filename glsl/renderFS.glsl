@@ -29,7 +29,8 @@ void main(void){
 
     float density = texture(uPreviousFrame, fragUV).w;
 
-    // TODO: This implies that density is in [0, 1] which is not actually true
+    // Clamp density to [0, 1] so that it can be a proper alpha
+    density = clamp(density, 0., 1.);
     fragColor = mix(background, fluid, density);
 #endif
 }

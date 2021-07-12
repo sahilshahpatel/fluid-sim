@@ -25,17 +25,21 @@ OUTPUTS:     Sets the value of fragColor, the output color of this fragment
 void main(void){
     vec2 fragXY = fragUV * uResolution - 0.5;
 
+    float d;
+
     switch(uResetType){
         case RESET_NONE:
         return;
 
         default:
         case RESET_CENTER:
-        fragColor = vec4(0, 0, 0, 1. - step(0.1, length(fragUV - 0.5)));
+        d = 1. - step(0.1, length(fragUV - 0.5));
+        fragColor = vec4(0, 0, 0, 5.*d);
         return;
 
         case RESET_CORNER:
-        fragColor = vec4(1, 1, 0, 1. - step(2., length(fragXY)));
+        d = 1. - step(2., length(fragXY));
+        fragColor = vec4(1, 1, 0, 5.*d);
         return;
     }
 }

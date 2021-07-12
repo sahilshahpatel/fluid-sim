@@ -103,6 +103,36 @@ class FluidSimRenderer {
                 set: gl.uniform1i,
             }
         }
+
+        this.projectionUniforms = {
+            // Viewport dimensions to get texel coordinates
+            uResolution: {
+                location: undefined,
+                value: () => [canvas.width, canvas.height],
+                set: gl.uniform2fv,
+            },
+
+            // Previous frame's data (4 channels -> velocity + density)
+            uPreviousFrame: {
+                location: undefined,
+                value: () => 0,
+                set: gl.uniform1i,
+            },
+
+            // Previous Gauss-Seidel iteration data
+            uPreviousIteration: {
+                location: undefined,
+                value: () => 1,
+                set: gl.uniform1i,
+            },
+
+            // The stage of projection we are in
+            uStage: {
+                location: undefined,
+                value: () => this.uProjectionStage,
+                set: gl.uniform1i,
+            },
+        }
     }
 
     /* Returns a promise to set up this FluidSimRenderer object */
@@ -111,12 +141,13 @@ class FluidSimRenderer {
         return new Promise( (resolve, reject) => {
             // Create shader program from sources
             Promise.all([fetchText('../glsl/basicVS.glsl'), fetchText('../glsl/diffusionFS.glsl'),
-                         fetchText('../glsl/advectionFS.glsl'), fetchText('../glsl/renderFS.glsl'),
-                         fetchText('../glsl/resetFS.glsl')])
-            .then(([basicVSource, diffusionFSource, advectionFSource, renderFSource, resetFSource]) => {
+                         fetchText('../glsl/advectionFS.glsl'), fetchText('../glsl/projectionFS.glsl'),
+                         fetchText('../glsl/renderFS.glsl'), fetchText('../glsl/resetFS.glsl')])
+            .then(([basicVSource, diffusionFSource, advectionFSource, projectionFSource, renderFSource, resetFSource]) => {
                 let basicVS = loadShaderFromSource(gl, basicVSource, "x-shader/x-vertex");
                 let diffusionFS = loadShaderFromSource(gl, diffusionFSource, "x-shader/x-fragment");
                 let advectionFS = loadShaderFromSource(gl, advectionFSource, "x-shader/x-fragment");
+                let projectionFS = loadShaderFromSource(gl, projectionFSource, "x-shader/x-fragment");
                 let renderFS = loadShaderFromSource(gl, renderFSource, "x-shader/x-fragment");
                 let resetFS = loadShaderFromSource(gl, resetFSource, "x-shader/x-fragment");
 
@@ -129,7 +160,9 @@ class FluidSimRenderer {
                 if(!this.advectionProgram) reject();
                 initUniforms(gl, this.advectionUniforms, this.advectionProgram);
 
-                // TODO: projection
+                this.projectionProgram = createShaderProgram(gl, basicVS, projectionFS);
+                if(!this.projectionProgram) reject();
+                initUniforms(gl, this.projectionUniforms, this.projectionProgram);
 
                 this.renderProgram = createShaderProgram(gl, basicVS, renderFS);
                 if(!this.renderProgram) reject();
@@ -288,7 +321,42 @@ class FluidSimRenderer {
 
     project(){
         let gl = this.gl;
-        // Pass
+        
+        this.useShader(this.projectionProgram);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+
+        // Stage 1: Gauss Seidel to find curl-free portion
+        this.uProjectionStage = 0;
+        setUniforms(gl, this.projectionUniforms);
+        
+        // Bind previous frame texture
+        gl.activeTexture(gl.TEXTURE0 + this.projectionUniforms.uPreviousFrame.value());
+        gl.bindTexture(gl.TEXTURE_2D, this.frameTextures[this.currFrameTexture]);
+
+        for(let i = 0; i < 10; i++){
+            // Bind previous iteration texture
+            gl.activeTexture(gl.TEXTURE0 + this.projectionUniforms.uPreviousIteration.value());
+            gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);
+
+            // Render to next iteration texture
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.iterationTextures[1 - this.currIterationTexture], 0);
+            gl.drawArrays(gl.TRIANGLES, 0, this.vertexPositionBuffer.numberOfItems);
+
+            // Swap iteration textures
+            this.currIterationTexture = 1 - this.currIterationTexture;
+        }
+
+        // Now do stage 2: calculating divergence-free portion
+        this.uProjectionStage = 1;
+        setUniforms(gl, this.projectionUniforms);
+        gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);
+
+        // Render to frameTexture
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.frameTextures[1 - this.currFrameTexture], 0);
+        gl.drawArrays(gl.TRIANGLES, 0, this.vertexPositionBuffer.numberOfItems);
+
+        // Swap frameTextures
+        this.currFrameTexture = 1 - this.currFrameTexture;
     }
 
     /* Run the Render Shader to display the fluid on screen */
