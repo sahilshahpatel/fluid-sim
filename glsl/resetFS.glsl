@@ -15,6 +15,7 @@ out vec4 fragColor;                     // The final color for this fragment
 const int RESET_NONE = 0; // Shouldn't ever be used, but just in case
 const int RESET_CENTER = 1;
 const int RESET_CORNER = 2;
+const int RESET_SPIRAL_IN = 3;
 
 
 /** void main(void)
@@ -26,6 +27,7 @@ void main(void){
     vec2 fragXY = fragUV * uResolution - 0.5;
 
     float d;
+    vec2 v;
 
     switch(uResetType){
         case RESET_NONE:
@@ -34,12 +36,21 @@ void main(void){
         default:
         case RESET_CENTER:
         d = 1. - step(0.1, length(fragUV - 0.5));
-        fragColor = vec4(0, 0, 0, 5.*d);
+        fragColor = vec4(0, 0, 0, 5.) * d;
         return;
 
         case RESET_CORNER:
         d = 1. - step(2., length(fragXY));
-        fragColor = vec4(1, 1, 0, 5.*d);
+        fragColor = vec4(1, 1, 0, 5. * d);
+        return;
+
+        case RESET_SPIRAL_IN:
+        vec2 p = (fragUV - 0.5) * uResolution; // resolution corrected but with center origin
+        d = 1. - step(4., length(fragXY));
+        v.x = p.y - p.x;
+        v.y = -p.x - p.y;
+        v = normalize(v);
+        fragColor = vec4(v, 0, d);
         return;
     }
 }

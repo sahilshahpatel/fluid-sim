@@ -4,6 +4,9 @@ class FluidSimRenderer {
         this.gl = canvas.getContext("webgl2");
         let gl = this.gl;
 
+        this.dataResolution = [16, 10];
+        this.renderResolution = [800, 500];
+
         gl.clearColor(0, 0, 0, 1);
 
         if(!gl){
@@ -26,7 +29,7 @@ class FluidSimRenderer {
             // Viewport dimensions to get texel coordinates
             uResolution: {
                 location: undefined,
-                value: () => [canvas.width, canvas.height],
+                value: () => this.dataResolution,
                 set: gl.uniform2fv,
             },
 
@@ -63,7 +66,7 @@ class FluidSimRenderer {
             // Viewport dimensions to get texel coordinates
             uResolution: {
                 location: undefined,
-                value: () => [canvas.width, canvas.height],
+                value: () => this.dataResolution,
                 set: gl.uniform2fv,
             },
 
@@ -89,26 +92,11 @@ class FluidSimRenderer {
             },
         }
 
-        this.resetUniforms = {
-            // Viewport dimensions to get texel coordinates
-            uResolution: {
-                location: undefined,
-                value: () => [canvas.width, canvas.height],
-                set: gl.uniform2fv,
-            },
-
-            uResetType: {
-                location: undefined,
-                value: () => this.uResetType,
-                set: gl.uniform1i,
-            }
-        }
-
         this.projectionUniforms = {
             // Viewport dimensions to get texel coordinates
             uResolution: {
                 location: undefined,
-                value: () => [canvas.width, canvas.height],
+                value: () => this.dataResolution,
                 set: gl.uniform2fv,
             },
 
@@ -131,6 +119,35 @@ class FluidSimRenderer {
                 location: undefined,
                 value: () => this.uProjectionStage,
                 set: gl.uniform1i,
+            },
+        }
+
+        this.resetUniforms = {
+            // Viewport dimensions to get texel coordinates
+            uResolution: {
+                location: undefined,
+                value: () => this.dataResolution,
+                set: gl.uniform2fv,
+            },
+
+            uResetType: {
+                location: undefined,
+                value: () => this.uResetType,
+                set: gl.uniform1i,
+            }
+        }
+
+        this.renderUniforms = {
+            uData: {
+                location: undefined,
+                value: () => 0,
+                set: gl.uniform1i,
+            },
+
+            uDataResolution: {
+                location: undefined,
+                value: () => this.dataResolution,
+                set: gl.uniform2fv,
             },
         }
     }
@@ -166,6 +183,7 @@ class FluidSimRenderer {
 
                 this.renderProgram = createShaderProgram(gl, basicVS, renderFS);
                 if(!this.renderProgram) reject();
+                initUniforms(gl, this.renderUniforms, this.renderProgram);
 
                 this.resetProgram = createShaderProgram(gl, basicVS, resetFS);
                 if(!this.resetProgram) reject();
@@ -196,7 +214,7 @@ class FluidSimRenderer {
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
                     
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.FLOAT, null);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, ...this.dataResolution, 0, gl.RGBA, gl.FLOAT, null);
                 }
 
                 this.frameTextures = [];
@@ -256,6 +274,7 @@ class FluidSimRenderer {
         let gl = this.gl;
 
         gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.viewport(0, 0, ...this.dataResolution);
 
         // If reset flag is low, update as normal
         if(this.uResetType > 0){
@@ -269,7 +288,6 @@ class FluidSimRenderer {
         }
 
         // Unbind to be safe
-        gl.bindVertexArray(null);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
@@ -364,16 +382,24 @@ class FluidSimRenderer {
         let gl = this.gl;
         
         this.useShader(this.renderProgram);
+        setUniforms(gl, this.renderUniforms);
 
-        /* Set uniforms */
-        gl.activeTexture(gl.TEXTURE0);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height); // Reset viewport to full canvas resolution
+
+        /* Send data in the form of texture */
+        gl.activeTexture(gl.TEXTURE0 + this.renderUniforms.uData.value());
         gl.bindTexture(gl.TEXTURE_2D, this.frameTextures[this.currFrameTexture]);
 
         /* Draw */
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // Draw to canvas, not texture
         gl.clear(gl.COLOR_BUFFER_BIT);
         gl.bindVertexArray(this.vertexArrayObject);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // Draw to canvas, not texture
         gl.drawArrays(gl.TRIANGLES, 0, this.vertexPositionBuffer.numberOfItems);
+
+        // Unbind to be safe
+        gl.bindVertexArray(null);
+
+        // [this.canvas.width, this.canvas.height] = this.dataResolution; 
     }
 
     reset(){
