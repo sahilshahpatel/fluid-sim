@@ -49,11 +49,6 @@ void main(void){
     previousIterationData = texture(uPreviousIteration, fragUV);
 
 
-    // DEBUG: Just disable projection for now
-    fragColor = previousFrameData;
-    return;
-
-
     // We have two different functions based on if we are removing curl or divergence. We want to remove divergence, but
     // to do so we must first calculate the curl-free portion and then subtract it out. We use a uniform to tell us which
     // stage we are at in order to keep the code in one shader.
@@ -109,7 +104,7 @@ vec2 remove_div(){
 
     vec2 curl_free = vec2(
         (right.x - left.x) / 2.0,
-        (up.y - down.y) / 2.0
+        (up.x - down.x) / 2.0
     );
 
     // The divergence free portion is just the original minus the curl_free portion

@@ -4,7 +4,7 @@ class FluidSimRenderer {
         this.gl = canvas.getContext("webgl2");
         let gl = this.gl;
 
-        this.dataResolution = [16, 10];
+        this.dataResolution = [80, 50]; //[16, 10];
         this.renderResolution = [800, 500];
 
         gl.clearColor(0, 0, 0, 1);
@@ -13,6 +13,8 @@ class FluidSimRenderer {
             console.error("Failed to get WebGL2 context!");
             return;
         }
+
+        this.iterations = 50;
 
         this.currFrameTexture = 0;
         this.currIterationTexture = 0;
@@ -308,7 +310,7 @@ class FluidSimRenderer {
         // Start with a blank (all-0) texture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.iterationTextures[1 - this.currIterationTexture], 0);
-        for(let i = 0; i < 10; i++){
+        for(let i = 0; i < this.iterations; i++){
             // Set up input/output textures and draw
             gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.iterationTextures[1 - this.currIterationTexture], 0);
@@ -351,7 +353,7 @@ class FluidSimRenderer {
         gl.activeTexture(gl.TEXTURE0 + this.projectionUniforms.uPreviousFrame.value());
         gl.bindTexture(gl.TEXTURE_2D, this.frameTextures[this.currFrameTexture]);
 
-        for(let i = 0; i < 10; i++){
+        for(let i = 0; i < this.iterations; i++){
             // Bind previous iteration texture
             gl.activeTexture(gl.TEXTURE0 + this.projectionUniforms.uPreviousIteration.value());
             gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);

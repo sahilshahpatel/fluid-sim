@@ -14,7 +14,7 @@ in vec2 fragUV;
 out vec4 fragColor;
 
 /* Helper Functions */
-vec3 draw_arrow(vec2 dir);
+vec3 drawArrow(void);
 vec2 rotate(vec2 p, float a);
 float sdTriangle( in vec2 p, in vec2 p0, in vec2 p1, in vec2 p2 );
 float sdBox( in vec2 p, in vec2 b );
@@ -38,28 +38,35 @@ void main(void){
 
     vec4 data = texture(uData, fragUV);
     float density = data.w;
-    vec2 vel = data.xy;
 
     // Clamp density to [0, 1] so that it can be a proper alpha
     density = clamp(density, 0., 1.);
     fragColor = mix(background, fluid, density);
 
-    vec3 arrow = draw_arrow(vel);
+    vec3 arrow = drawArrow();
 
     fragColor = length(arrow) == 0. ? fragColor : vec4(arrow, 1);
 #endif
+
+    vec2 f = normalize(uDataResolution) * 8.;
+    // fragColor = vec4(floor(fragUV * f) / f, 0, 1);
 }
 
 
-vec3 draw_arrow(vec2 dir){
-    if(length(dir) <= 0.) return vec3(0);
+const float arrowDensity = 16.;
+vec3 drawArrow(void){
+    // Velocity should be measured at one spot for entire arrow
+    vec2 cellSelector = normalize(uDataResolution) * arrowDensity;
+    vec2 vel = texture(uData, floor(fragUV * cellSelector) / cellSelector).xy;
 
-    vec2 pos = fragUV * uDataResolution;
+    if(length(vel) <= 0.) return vec3(0);
+
+    vec2 pos = fragUV * cellSelector;
     vec2 p = (fract(pos) - 0.5) * 2.; // This is [-1, 1] position w/ origin at center of cell
 
     // Resize and rotate p to orient arrow
-    float size = clamp(length(dir), 0.01, 1.);
-    p = rotate(p / size, atan(dir.y, dir.x));
+    float size = clamp(length(vel / uDataResolution * vec2(16., 10.)), 0.01, 1.);
+    p = rotate(p / size, atan(vel.y, vel.x));
 
     // We will use an SDF to draw over arrows
     float d = sdTriangle(p, vec2(0.1, 0.5), vec2(0.1, -0.5), vec2(0.75, 0));

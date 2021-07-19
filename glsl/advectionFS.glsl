@@ -43,8 +43,7 @@ void main(void){
     previousFrameData = texture(uPreviousFrame, fragUV);
     previousIterationData = texture(uPreviousIteration, fragUV);
     
-    fragColor = vec4(previousFrameData.xyz, advection().w);
-    // fragColor = advection();
+    fragColor = advection();
 }
 
 /** vec4 advection(void)

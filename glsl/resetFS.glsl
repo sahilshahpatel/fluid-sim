@@ -26,8 +26,11 @@ OUTPUTS:     Sets the value of fragColor, the output color of this fragment
 void main(void){
     vec2 fragXY = fragUV * uResolution - 0.5;
 
-    float d;
-    vec2 v;
+    vec2 aspect = normalize(uResolution);
+    vec2 uv = fragUV * aspect; // Aspect ratio-corrected UVs (not always in [0, 1])
+
+    float d = 0.;
+    vec2 v = vec2(0);
 
     switch(uResetType){
         case RESET_NONE:
@@ -35,21 +38,22 @@ void main(void){
 
         default:
         case RESET_CENTER:
-        d = 1. - step(0.1, length(fragUV - 0.5));
-        fragColor = vec4(0, 0, 0, 5.) * d;
+        d = 5. * (1. - step(0.1, length((fragUV - 0.5) * aspect)));
+        fragColor = vec4(v, 0, d);
         return;
 
         case RESET_CORNER:
-        d = 1. - step(2., length(fragXY));
-        fragColor = vec4(1, 1, 0, 5. * d);
+        d = 5. * (1. - step(0.1, length((fragUV - 0.15) * aspect)));
+        v = uResolution * vec2(0.0625, 0.1) * (1. - step(0.25, abs(uv.x - uv.y)));
+        fragColor = vec4(v, 0, d);
         return;
 
         case RESET_SPIRAL_IN:
         vec2 p = (fragUV - 0.5) * uResolution; // resolution corrected but with center origin
-        d = 1. - step(4., length(fragXY));
+        d = 1. - step(0.25, length(uv));
         v.x = p.y - p.x;
         v.y = -p.x - p.y;
-        v = normalize(v);
+        v = uResolution * vec2(0.0625, 0.1) * normalize(v);
         fragColor = vec4(v, 0, d);
         return;
     }

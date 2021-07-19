@@ -44,7 +44,7 @@ void main(void){
     previousFrameData = texture(uPreviousFrame, fragUV);
     previousIterationData = texture(uPreviousIteration, fragUV);
     
-    fragColor = vec4(previousFrameData.xyz, diffusion().w);
+    fragColor = diffusion();
 }
 
 
