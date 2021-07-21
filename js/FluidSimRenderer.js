@@ -495,6 +495,7 @@ class FluidSimRenderer {
     }
 
     stop(){
+        let gl = this.gl;
         cancelAnimationFrame(this.requestAnimationFrameID);
         this.requestAnimationFrameID = undefined;
         gl.useProgram(null);
