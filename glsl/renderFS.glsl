@@ -52,7 +52,7 @@ void main(void){
 
 const float arrowDensity = 16.;
 vec3 drawArrow(void){
-    // Velocity should be measured at one spot for entire arrow
+    // Velocity should be measured at center for entire arrow
     vec2 cellSelector = normalize(uDataResolution) * arrowDensity;
     vec2 vel = texture(uData, (floor(fragUV * cellSelector)  + 0.5)/ cellSelector).xy;
 

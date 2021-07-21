@@ -41,7 +41,6 @@ void main(void){
     fragXY = fragST - 0.5;
 
     previousFrameData = texture(uPreviousFrame, fragUV);
-    previousIterationData = texture(uPreviousIteration, fragUV);
     
     fragColor = advection();
 }
@@ -60,10 +59,10 @@ vec4 advection(void){
     vec2 i = floor(source) + 0.5; // convert back to ST before texture() call
     vec2 j = fract(source);
 
-    vec4 a = texture(uPreviousIteration,  i / uResolution);
-    vec4 b = texture(uPreviousIteration, (i + vec2(1, 0)) / uResolution);
-    vec4 c = texture(uPreviousIteration, (i + vec2(0, 1)) / uResolution);
-    vec4 d = texture(uPreviousIteration, (i + vec2(1, 1)) / uResolution);
+    vec4 a = texture(uPreviousFrame,  i / uResolution);
+    vec4 b = texture(uPreviousFrame, (i + vec2(1, 0)) / uResolution);
+    vec4 c = texture(uPreviousFrame, (i + vec2(0, 1)) / uResolution);
+    vec4 d = texture(uPreviousFrame, (i + vec2(1, 1)) / uResolution);
 
     vec4 inFlow = mix(mix(a, b, j.x), mix(c, d, j.x), j.y);
 

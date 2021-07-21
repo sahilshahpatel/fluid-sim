@@ -48,7 +48,7 @@ void main(void){
 
     // Add in sources from mouse
     float sourceDensity = 10. * uDeltaTime;
-    previousFrameData += (1. - step(3., length(fragXY - uFluidSourcePos))) * vec4(uFluidSourceVel, 0., sourceDensity);
+    previousFrameData += (1. - step(5., length(fragXY - uFluidSourcePos))) * vec4(uFluidSourceVel, 0., sourceDensity);
     
     fragColor = diffusion();
 }

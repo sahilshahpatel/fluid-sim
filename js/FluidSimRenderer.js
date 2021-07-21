@@ -4,7 +4,7 @@ class FluidSimRenderer {
         this.gl = canvas.getContext("webgl2");
         let gl = this.gl;
 
-        this.dataResolution = [80, 50]; //[16, 10];
+        this.dataResolution = [320, 200];
         this.renderResolution = [800, 500];
 
         gl.clearColor(0, 0, 0, 1);
@@ -189,13 +189,15 @@ class FluidSimRenderer {
 
             this.mousedown = true;
         });
-        this.canvas.addEventListener('mouseup',  () => { this.mousedown = false; });
+        
+        // For mouseup we use document in case they dragged off canvas before mouseup
+        document.addEventListener('mouseup',  () => { this.mousedown = false; });
 
         this.canvas.addEventListener('mousemove', e => {
             if (!this.mousedown) return; 
             
             let now = Date.now();
-            let dt = (now - this.mousemoveTime) / 1000;
+            let dt = (now - this.mousemoveTime) / 1e3;
             this.mousemoveTime = now;
 
             let nextPos = getNextPos(e);
@@ -336,6 +338,7 @@ class FluidSimRenderer {
         }
         else{
             this.diffuse();
+            this.project();
             this.advect();
             this.project();
         }
@@ -361,7 +364,7 @@ class FluidSimRenderer {
         // Start with a blank (all-0) texture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.iterationTextures[1 - this.currIterationTexture], 0);
-        for(let i = 0; i < this.iterations; i++){
+        for(let i = 0; i < this.iterations - 1; i++){
             // Set up input/output textures and draw
             gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.iterationTextures[1 - this.currIterationTexture], 0);
@@ -370,6 +373,12 @@ class FluidSimRenderer {
             // Switch iterationTextures
             this.currIterationTexture = 1 - this.currIterationTexture;
         }
+
+        // In the last step, render to frameTexture instead of iterationTexture
+        gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.frameTextures[1 - this.currFrameTexture], 0);
+        gl.drawArrays(gl.TRIANGLES, 0, this.vertexPositionBuffer.numberOfItems);
+        this.currFrameTexture = 1 - this.currFrameTexture;
     }
 
     advect(){
@@ -378,8 +387,8 @@ class FluidSimRenderer {
         this.useShader(this.advectionProgram);
         setUniforms(gl, this.advectionUniforms);
 
-        gl.activeTexture(gl.TEXTURE0 + this.advectionUniforms.uPreviousIteration.value());
-        gl.bindTexture(gl.TEXTURE_2D, this.iterationTextures[this.currIterationTexture]);
+        gl.activeTexture(gl.TEXTURE0 + this.advectionUniforms.uPreviousFrame.value());
+        gl.bindTexture(gl.TEXTURE_2D, this.frameTextures[this.currFrameTexture]);
 
         // Advection can output to the offhand frameTexture since it doesn't use Gauss-Seidel
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
