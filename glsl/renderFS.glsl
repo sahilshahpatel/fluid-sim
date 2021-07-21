@@ -47,9 +47,6 @@ void main(void){
 
     fragColor = length(arrow) == 0. ? fragColor : vec4(arrow, 1);
 #endif
-
-    vec2 f = normalize(uDataResolution) * 8.;
-    // fragColor = vec4(floor(fragUV * f) / f, 0, 1);
 }
 
 
@@ -57,7 +54,7 @@ const float arrowDensity = 16.;
 vec3 drawArrow(void){
     // Velocity should be measured at one spot for entire arrow
     vec2 cellSelector = normalize(uDataResolution) * arrowDensity;
-    vec2 vel = texture(uData, floor(fragUV * cellSelector) / cellSelector).xy;
+    vec2 vel = texture(uData, (floor(fragUV * cellSelector)  + 0.5)/ cellSelector).xy;
 
     if(length(vel) <= 0.) return vec3(0);
 

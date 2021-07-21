@@ -10,6 +10,8 @@ uniform sampler2D uPreviousIteration;   // Data from last iteration of Gauss-Sei
 uniform vec2 uResolution;               // Canvas resolution - 1 for converting to "integer indices"
 uniform float uDeltaTime;               // Time since last frame
 uniform float uDiffusion;               // The diffusion factor
+uniform vec2 uFluidSourcePos;           // Fluid source position (from mouse)
+uniform vec2 uFluidSourceVel;           // Fluid source velocity (from mouse)
 in vec2 fragUV;                         // Fragment position with [0, 1] coordinates and bottom-left origin
 
 out vec4 fragColor;                     // The final color for this fragment
@@ -43,6 +45,10 @@ void main(void){
 
     previousFrameData = texture(uPreviousFrame, fragUV);
     previousIterationData = texture(uPreviousIteration, fragUV);
+
+    // Add in sources from mouse
+    float sourceDensity = 10. * uDeltaTime;
+    previousFrameData += (1. - step(3., length(fragXY - uFluidSourcePos))) * vec4(uFluidSourceVel, 0., sourceDensity);
     
     fragColor = diffusion();
 }

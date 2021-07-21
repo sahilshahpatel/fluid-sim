@@ -14,6 +14,8 @@ class FluidSimRenderer {
             return;
         }
 
+        this.initMouseTracking();
+
         this.iterations = 50;
 
         this.currFrameTexture = 0;
@@ -61,6 +63,19 @@ class FluidSimRenderer {
                 location: undefined,
                 value: () => this.uDiffusion,
                 set: gl.uniform1f,
+            },
+
+            // Adds fluid sources via mouse
+            uFluidSourcePos: {
+                location: undefined,
+                value: () => this.mousedown ? this.mouse.pos : [-1, -1],
+                set: gl.uniform2fv,
+            },
+
+            uFluidSourceVel: {
+                location: undefined,
+                value: () => this.mousedown ? this.mouse.vel : [0, 0],
+                set: gl.uniform2fv,
             },
         }
 
@@ -152,6 +167,42 @@ class FluidSimRenderer {
                 set: gl.uniform2fv,
             },
         }
+    }
+
+    initMouseTracking(){
+        this.mouse = {
+            pos: undefined,
+            vel: undefined,
+        };
+
+        let getNextPos = e => [
+            e.offsetX * this.dataResolution[0] / this.canvas.offsetWidth,
+            (this.canvas.offsetHeight - e.offsetY) * this.dataResolution[1] / this.canvas.offsetHeight
+        ];
+
+        this.mousedown = false;
+        this.mousemoveTime = Date.now();
+        this.canvas.addEventListener('mousedown', e => {
+            this.mousemoveTime = Date.now();
+            this.mouse.pos = getNextPos(e);
+            this.mouse.vel = [0, 0];
+
+            this.mousedown = true;
+        });
+        this.canvas.addEventListener('mouseup',  () => { this.mousedown = false; });
+
+        this.canvas.addEventListener('mousemove', e => {
+            if (!this.mousedown) return; 
+            
+            let now = Date.now();
+            let dt = (now - this.mousemoveTime) / 1000;
+            this.mousemoveTime = now;
+
+            let nextPos = getNextPos(e);
+
+            this.mouse.vel = [(nextPos[0] - this.mouse.pos[0]) / dt, (nextPos[1] - this.mouse.pos[1]) / dt];
+            this.mouse.pos = nextPos;
+        });
     }
 
     /* Returns a promise to set up this FluidSimRenderer object */
