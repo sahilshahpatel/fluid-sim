@@ -480,8 +480,7 @@ class FluidSimRenderer {
         gl.drawArrays(gl.TRIANGLES, 0, this.vertexPositionBuffer.numberOfItems);
     }
 
-    start(){
-        this.frameTimes = [];
+    play(){
         this.requestAnimationFrameID = requestAnimationFrame(this.animate.bind(this));
     }
 
@@ -494,7 +493,7 @@ class FluidSimRenderer {
         this.requestAnimationFrameID = requestAnimationFrame(this.animate.bind(this));
     }
 
-    stop(){
+    pause(){
         let gl = this.gl;
         cancelAnimationFrame(this.requestAnimationFrameID);
         this.requestAnimationFrameID = undefined;
