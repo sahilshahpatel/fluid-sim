@@ -7,7 +7,7 @@ precision mediump float;
 
 uniform sampler2D uPreviousFrame;       // Data from last frame of simulation
 uniform sampler2D uPreviousIteration;   // Data from last iteration of Gauss-Seidel method
-uniform vec2 uResolution;               // Canvas resolution - 1 for converting to "integer indices"
+uniform vec2 uResolution;               // Canvas resolution for converting to "integer indices"
 uniform int uStage;                     // The stage of projection we are in (removing curl or divergence)
 in vec2 fragUV;                         // Fragment position with [0, 1] coordinates and bottom-left origin
 

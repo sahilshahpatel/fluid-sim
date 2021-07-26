@@ -4,15 +4,16 @@ class FluidSimRenderer {
         this.gl = canvas.getContext("webgl2");
         let gl = this.gl;
 
-        this.dataResolution = [320, 200];
-        this.renderResolution = [800, 500];
-
-        gl.clearColor(0, 0, 0, 1);
-
         if(!gl){
             console.error("Failed to get WebGL2 context!");
             return;
         }
+
+        this.dataResolution = [320, 200];
+        this.renderResolution = [800, 500];
+        [this.canvas.width, this.canvas.height] = this.renderResolution;
+
+        gl.clearColor(0, 0, 0, 1);
 
         this.initMouseTracking();
 

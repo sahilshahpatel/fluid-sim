@@ -6,7 +6,7 @@ precision mediump float;
 #endif
 
 uniform sampler2D uPreviousFrame;       // Data from last frame of simulation
-uniform vec2 uResolution;               // Canvas resolution - 1 for converting to "integer indices"
+uniform vec2 uResolution;               // Canvas resolution for converting to "integer indices"
 uniform float uDeltaTime;               // Time since last frame
 uniform int uComponentSelector;         // Decides if this shader should affect density and/or velocity
 
