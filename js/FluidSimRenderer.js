@@ -9,65 +9,78 @@ class FluidSimRenderer {
             return;
         }
 
+        
+        ////////////////////////////////////// Configuration parameters ///////////////////////////////////////////////
         this.dataResolution = [320, 200];
         this.renderResolution = [800, 500];
-        [this.canvas.width, this.canvas.height] = this.renderResolution;
-
-        gl.clearColor(0, 0, 0, 1);
-
-        this.initMouseTracking();
-
-        this.iterations = 50;
-
-        this.currFrameTexture = 0;
-        this.currIterationTexture = 0;
-        this.requestAnimationFrameID = undefined;
-
-        this.previousTime = 0;
-        this.deltaTime = 0;
-
         this.uResetType = 1;
         this.uDiffusion = 1;
-        this.uComponentSelector = 0;
+        this.iterations = 50;
 
-        // Naming conventions based on names in shader code
+        
+        ////////////////////////////////////// Initialize fields //////////////////////////////////////////////////////
+        this.requestAnimationFrameID = undefined;
+        this.previousTime = 0;
+        this.deltaTime = 0;
+        this.uComponentSelector = 0;
+        
+        let setTextureParams = () => {
+            // See https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glTexParameter.xhtml for details
+            // TODO: Should I set these to gl.LINEAR instead of gl.NEAREST to do bilinear interpolation for me?
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        }
+
+        this.inkTexture   = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.inkTexture);
+        setTextureParams();
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, ...this.dataResolution, 0, gl.RED, gl.FLOAT, null);
+
+        this.velocityTexture  = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture);
+        setTextureParams();
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, ...this.dataResolution, 0, gl.RG, gl.FLOAT, null);
+
+        this.vorticityTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.inkTexture);
+        setTextureParams();
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB32F, ...this.dataResolution, 0, gl.RGB, gl.FLOAT, null);
+
+
+        ////////////////////////////////////// Shader Uniforms ////////////////////////////////////////////////////////
         this.diffusionUniforms = {
-            // Viewport dimensions to get texel coordinates
             uResolution: {
                 location: undefined,
                 value: () => this.dataResolution,
                 set: gl.uniform2fv,
             },
 
-            // Previous frame's data (4 channels -> velocity + density)
             uPreviousFrame: {
                 location: undefined,
                 value: () => 0,
                 set: gl.uniform1i,
             },
 
-            // Previous Gauss-Seidel iteration data
             uPreviousIteration: {
                 location: undefined,
                 value: () => 1,
                 set: gl.uniform1i,
             },
 
-            // Time passed
             uDeltaTime: {
                 location: undefined,
                 value: () => this.deltaTime / 1e3,
                 set: gl.uniform1f,
             },
 
-            // Sets the diffusion factor
             uDiffusion: {
                 location: undefined,
                 value: () => this.uDiffusion,
                 set: gl.uniform1f,
             },
 
-            // Adds fluid sources via mouse
             uFluidSourcePos: {
                 location: undefined,
                 value: () => this.mousedown ? this.mouse.pos : [-1, -1],
@@ -174,6 +187,10 @@ class FluidSimRenderer {
                 set: gl.uniform2fv,
             },
         }
+
+        /* Final initialization */
+        [this.canvas.width, this.canvas.height] = this.renderResolution;
+        this.initMouseTracking();
     }
 
     initMouseTracking(){
