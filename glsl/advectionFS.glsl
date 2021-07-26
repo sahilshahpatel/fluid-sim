@@ -6,9 +6,10 @@ precision mediump float;
 #endif
 
 uniform sampler2D uPreviousFrame;       // Data from last frame of simulation
-uniform sampler2D uPreviousIteration;   // Data from last iteration of Gauss-Seidel method
 uniform vec2 uResolution;               // Canvas resolution - 1 for converting to "integer indices"
 uniform float uDeltaTime;               // Time since last frame
+uniform int uComponentSelector;         // Decides if this shader should affect density and/or velocity
+
 in vec2 fragUV;                         // Fragment position with [0, 1] coordinates and bottom-left origin
 
 out vec4 fragColor;                     // The final color for this fragment
@@ -17,7 +18,6 @@ out vec4 fragColor;                     // The final color for this fragment
 vec2 fragXY;                            // "World space" coordinates (i.e. the would-be index into the frame buffer)
 vec2 fragST;                            // "Texture space" coordinates (i.e. fragXY + vec2(0.5) in order to center the pixels)
 vec4 previousFrameData;
-vec4 previousIterationData;
 
 /* Function List */
 vec4 advection(void);
@@ -42,7 +42,22 @@ void main(void){
 
     previousFrameData = texture(uPreviousFrame, fragUV);
     
-    fragColor = advection();
+    switch(uComponentSelector){
+        case 0:
+        default:
+            fragColor = advection();
+            break;
+
+        case 1:
+            fragColor = previousFrameData;
+            fragColor.w = advection().w;
+            break;
+        
+        case 2:
+            fragColor = previousFrameData;
+            fragColor.xy = advection().xy;
+            break;
+    }
 }
 
 /** vec4 advection(void)

@@ -27,6 +27,7 @@ class FluidSimRenderer {
 
         this.uResetType = 1;
         this.uDiffusion = 1;
+        this.uComponentSelector = 0;
 
         // Naming conventions based on names in shader code
         this.diffusionUniforms = {
@@ -77,6 +78,12 @@ class FluidSimRenderer {
                 value: () => this.mousedown ? this.mouse.vel : [0, 0],
                 set: gl.uniform2fv,
             },
+
+            uComponentSelector: {
+                location: undefined,
+                value: () => this.uComponentSelector,
+                set: gl.uniform1i,
+            },
         }
 
         this.advectionUniforms = {
@@ -94,18 +101,17 @@ class FluidSimRenderer {
                 set: gl.uniform1i,
             },
 
-            // Previous Gauss-Seidel iteration data
-            uPreviousIteration: {
-                location: undefined,
-                value: () => 1,
-                set: gl.uniform1i,
-            },
-
             // Time passed
             uDeltaTime: {
                 location: undefined,
                 value: () => this.deltaTime / 1e3,
                 set: gl.uniform1f,
+            },
+
+            uComponentSelector: {
+                location: undefined,
+                value: () => this.uComponentSelector,
+                set: gl.uniform1i,
             },
         }
 

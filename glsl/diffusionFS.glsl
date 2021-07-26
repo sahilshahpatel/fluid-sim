@@ -12,6 +12,7 @@ uniform float uDeltaTime;               // Time since last frame
 uniform float uDiffusion;               // The diffusion factor
 uniform vec2 uFluidSourcePos;           // Fluid source position (from mouse)
 uniform vec2 uFluidSourceVel;           // Fluid source velocity (from mouse)
+uniform int uComponentSelector;         // Decides if this shader should affect density and/or velocity
 in vec2 fragUV;                         // Fragment position with [0, 1] coordinates and bottom-left origin
 
 out vec4 fragColor;                     // The final color for this fragment
@@ -47,10 +48,25 @@ void main(void){
     previousIterationData = texture(uPreviousIteration, fragUV);
 
     // Add in sources from mouse
-    float sourceDensity = 10. * uDeltaTime;
+    float sourceDensity = 100. * uDeltaTime;
     previousFrameData += (1. - step(5., length(fragXY - uFluidSourcePos))) * vec4(uFluidSourceVel, 0., sourceDensity);
     
-    fragColor = diffusion();
+    switch(uComponentSelector){
+        case 0:
+        default:
+            fragColor = diffusion();
+            break;
+
+        case 1:
+            fragColor = previousFrameData;
+            fragColor.w = diffusion().w;
+            break;
+        
+        case 2:
+            fragColor = previousFrameData;
+            fragColor.xy = diffusion().xy;
+            break;
+    }
 }
 
 
