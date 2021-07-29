@@ -51,34 +51,6 @@ function fetchText(filePath){
 }
 
 
-function setUniforms(gl, uniforms){
-    for(const [name, uniform] of Object.entries(uniforms)){
-        let keys = Object.keys(uniform);
-        if(keys.includes('location'), keys.includes('value'), keys.includes('set')){
-            // This is a uniform, add it
-            uniform.set.call(gl, uniform.location, uniform.value());
-        } else {
-            // This is not yet a uniform (might be struct), recurse
-            setUniforms(gl, uniform);
-        }
-    }
-}
-
-
-function initUniforms(gl, uniforms, program, prefix = ''){
-    for(const [name, uniform] of Object.entries(uniforms)){
-        let keys = Object.keys(uniform);
-        if(keys.includes('location'), keys.includes('value'), keys.includes('set')){
-            // This is a uniform, set it's location
-            uniform.location = gl.getUniformLocation(program, prefix + name);
-        } else {
-            // This is not yet a uniform (might be struct), recurse
-            initUniforms(gl, uniform, program, prefix + name + '.');
-        }
-    }
-}
-
-
 function createShaderProgram(gl, vertexShader, fragmentShader){
     // Link the shaders together into a program.
     let shaderProgram = gl.createProgram();
