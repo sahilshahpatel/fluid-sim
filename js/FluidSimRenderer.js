@@ -22,7 +22,7 @@ class FluidSimRenderer {
         
         ////////////////////////////////////// Configuration parameters ///////////////////////////////////////////////
         this.dataResolution = [320, 200];
-        this.renderResolution = [800, 500];
+        this.renderResolution = [320, 200]; //[800, 500];
         this.uResetType = 1;
         this.uDiffusion = 1;
         this.iterations = 50;
@@ -52,11 +52,12 @@ class FluidSimRenderer {
             return texture;
         }
 
-        this.dyeTexture       = createTexture();
-        this.velocityTexture  = createTexture();
-        this.vorticityTexture = createTexture();
-        this.pressureTexture  = createTexture();
-        this.tempTexture      = createTexture(); // Used for "editing in place" via texture swap
+        this.dyeTexture        = createTexture();
+        this.velocityTexture   = createTexture();
+        this.vorticityTexture  = createTexture();
+        this.pressureTexture   = createTexture();
+        this.divergenceTexture = createTexture();
+        this.outputTexture     = createTexture(); // Used for "editing in place" via texture swap
 
         // A framebuffer is the tool we need to be able to render-to-texture.
         // Essentially, it will let us make our fragment shaders output to our 
@@ -88,18 +89,22 @@ class FluidSimRenderer {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.quad.buffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.quad.data), gl.STATIC_DRAW);
 
+        // dx, dy are deltas to get our lines to go straight through data cell centers
+        let dx = 1 / this.dataResolution[0];
+        let dy = 1 / this.dataResolution[1];
         this.boundary = {
             vao: gl.createVertexArray(),
             buffer: gl.createBuffer(),
             data: [
-                -1, -1, 0,
-                -1, +1, 0,
-                +1, +1, 0,
-                +1, -1, 0,
+                -1+dx, -1+dy, 0,
+                -1+dx, +1-dy, 0,
+                +1-dx, +1-dy, 0,
+                +1-dx, -1+dy, 0,
+                -1+dx, -1+dy, 0,
             ],
             itemSize: 3,
-            nItems: 4,
-            glDrawEnum: gl.LINE_LOOP,
+            nItems: 5,
+            glDrawEnum: gl.LINES,
         };
         gl.bindVertexArray(this.boundary.vao);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.boundary.buffer);
@@ -237,49 +242,78 @@ class FluidSimRenderer {
         if(this.uResetType > 0){
             // TODO: Re-implement reset but just reset to all 0s (no presets)
             this.uResetType = 0;
+
+            this.clearTexture(this.dyeTexture);
+            this.clearTexture(this.velocityTexture);
         }
         else{
 
-            // All texture operations output to this.tempTexture, so we will have to swap
+            // All texture operations output to this.outputTexture, so we will have to swap
             // around our textures to mimic outputting to the actual one we want. This is
             // a necessary step because WebGL cannot output to a texture which is also an 
             // input uniform which is often what we want!
             let tmp; // Used to swap textures
 
+
             ///////////////////////////////////////// Step 1: Advection ///////////////////////////////////////////////
             // a) Velocity
             this.advect(this.velocityTexture, this.velocityTexture, deltaTime);
-            tmp = this.velocityTexture; this.velocityTexture = this.tempTexture; this.tempTexture = tmp;
+            tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
             
             // b) Dye
             this.advect(this.dyeTexture, this.velocityTexture, deltaTime);
-            tmp = this.dyeTexture; this.dyeTexture = this.tempTexture; this.tempTexture = tmp;
+            tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
             
 
             ///////////////////////////////////////// Step 2: Diffusion ///////////////////////////////////////////////
             // a) Velocity
-            let vk = 220 * deltaTime;
-            this.jacobi(this.velocityTexture, this.velocityTexture, vk/4, 4/vk * (1 + vk));
-            tmp = this.velocityTexture; this.velocityTexture = this.tempTexture; this.tempTexture = tmp;
+            let vk = 1 * deltaTime;
+            for(let i = 0; i < 50; i++){
+                this.jacobi(this.velocityTexture, this.velocityTexture, 4/vk, 4/vk * (1 + vk));
+                tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
+            }
             
             // b) Dye
-            // let dk = 1 * deltaTime;
-            // this.jacobi(this.dyeTexture, this.dyeTexture, dk/4, 4/dk * (1 + dk));
-            // tmp = this.dyeTexture; this.dyeTexture = this.tempTexture; this.tempTexture = tmp;
+            let dk = 1 * deltaTime;
+            for(let i = 0; i < 25; i++){
+                this.jacobi(this.dyeTexture, this.dyeTexture, 4/dk, 4/dk * (1 + dk));
+                tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
+            }
 
 
             ///////////////////////////////////////// Step 3: External Forces /////////////////////////////////////////
             let strength = this.mousedown ? this.mouse.vel : [0, 0];
             this.applyForces(this.velocityTexture, deltaTime, this.mouse.pos, 50, strength);
-            tmp = this.velocityTexture; this.velocityTexture = this.tempTexture; this.tempTexture = tmp;
+            tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
 
 
             ///////////////////////////////////////// Step 4: Projection //////////////////////////////////////////////
-            // a) Compute pressure
-            // b) Subtract gradient
+            // a) Compute divergence of velocity
+            this.computeDivergence(this.velocityTexture);
+            tmp = this.divergenceTexture; this.divergenceTexture = this.outputTexture; this.outputTexture = tmp;
+
+            // b) Compute pressure
+            this.clearTexture(this.pressureTexture);
+            for(let i = 0; i < 40; i++){
+                this.jacobi(this.pressureTexture, this.divergenceTexture, -1, 4);
+                tmp = this.pressureTexture; this.pressureTexture = this.outputTexture; this.outputTexture = tmp;
+            }
+            
+            // c) Enforce boundary condition on pressure (must be equal to inner neighbor)
+            this.enforceBoundary(this.pressureTexture, 1);
+            tmp = this.pressureTexture; this.pressureTexture = this.outputTexture; this.outputTexture = tmp;
+
+            // c) Subtract gradient
+            this.removeDivergence(this.velocityTexture, this.pressureTexture);
+            tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
+
+
+            ///////////////////////////////////////// Step 5: Velocity Boundary Conditions ////////////////////////////
+            this.enforceBoundary(this.velocityTexture, -1);
+            tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
 
             
-            ///////////////////////////////////////// Step 5: Visualization ///////////////////////////////////////////
+            ///////////////////////////////////////// Step 6: Visualization ///////////////////////////////////////////
             this.render();
         }
 
@@ -290,7 +324,7 @@ class FluidSimRenderer {
 
     ////////////////////////////////////// Texture Operations /////////////////////////////////////////////////////////
     // We abstract out each texture operation as a function which takes in the uniform values to pass in.
-    // All functions output to this.tempTexture
+    // All functions output to this.outputTexture
 
     /** Advects a quantity through a velocity field
      * See ../glsl/advect.glsl for detailed information
@@ -320,10 +354,10 @@ class FluidSimRenderer {
         gl.uniform1f(this.advectionUniforms.dt, dt);
         gl.uniform2fv(this.advectionUniforms.res, this.dataResolution);
 
-        // Set to render to tempTexture
+        // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.viewport(0, 0, ...this.dataResolution);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tempTexture, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
         let status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
         if(status != gl.FRAMEBUFFER_COMPLETE){ console.error("Problem w/ framebuffer: " + status); }
@@ -354,18 +388,23 @@ class FluidSimRenderer {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, x);
 
-        gl.uniform1i(this.jacobiUniforms.b, 1);
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, b);
+        if(b === x){
+            gl.uniform1i(this.jacobiUniforms.b, 0);
+        }
+        else{
+            gl.uniform1i(this.jacobiUniforms.b, 1);
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, b);
+        }
 
         gl.uniform1f(this.jacobiUniforms.alpha, alpha);
         gl.uniform1f(this.jacobiUniforms.rBeta, 1/beta);
         gl.uniform2fv(this.jacobiUniforms.res, this.dataResolution);
 
-        // Set to render to tempTexture
+        // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.viewport(0, 0, ...this.dataResolution);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tempTexture, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
         // Run program
         gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
@@ -400,10 +439,10 @@ class FluidSimRenderer {
         gl.uniform1f(this.forcesUniforms.userForceRad, userForceRad);
         gl.uniform2fv(this.forcesUniforms.userForceStrength, userForceStrength);
 
-        // Set to render to tempTexture
+        // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.viewport(0, 0, ...this.dataResolution);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tempTexture, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
         // Run program
         gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
@@ -413,7 +452,7 @@ class FluidSimRenderer {
      * See ../glsl/forces.glsl for detailed information
      * @param {*} x 
      */
-    computDivergence(x){
+    computeDivergence(x){
         let gl = this.gl;
 
         // Set up WebGL to use this program and the correct geometry
@@ -430,10 +469,10 @@ class FluidSimRenderer {
 
         gl.uniform2fv(this.divergenceUniforms.res, this.dataResolution);
 
-        // Set to render to tempTexture
+        // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.viewport(0, 0, ...this.dataResolution);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tempTexture, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
         // Run program
         gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
@@ -465,10 +504,10 @@ class FluidSimRenderer {
 
         gl.uniform2fv(this.removeDivergenceUniforms.res, this.dataResolution);
 
-        // Set to render to tempTexture
+        // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.viewport(0, 0, ...this.dataResolution);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tempTexture, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
         // Run program
         gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
@@ -477,10 +516,9 @@ class FluidSimRenderer {
     /** Enforces boundary conditions on the given texture
      * See ../glsl/boundary.glsl for detailed information
      * @param {*} x
-     * @param {*} offset
      * @param {*} coeff 
      */
-    enforceBoundary(x, offset, coeff){
+    enforceBoundary(x, coeff){
         let gl = this.gl;
 
         // Set up WebGL to use this program and the correct geometry
@@ -496,16 +534,19 @@ class FluidSimRenderer {
         gl.bindTexture(gl.TEXTURE_2D, x);
 
         gl.uniform2fv(this.boundaryUniforms.res, this.dataResolution);
-        gl.uniform1f(this.boundaryUniforms.offset, offset);
         gl.uniform1f(this.boundaryUniforms.coeff, coeff);
 
-        // Set to render to tempTexture
+        // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.viewport(0, 0, ...this.dataResolution);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tempTexture, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
-        // Run program
-        gl.drawArrays(this.boundary.glDrawEnum, 0, this.boundary.nItems);
+        // We will need to repeat this process with different offsets for each boundary line
+        let offsets = [[1, 0], [0, -1], [-1, 0], [0, 1]]; // left, top, right, bottom line order (from boundary.data)
+        for(let i = 0; i < 4; i ++){
+            gl.uniform2fv(this.boundaryUniforms.offset, offsets[i]);
+            gl.drawArrays(gl.LINES, i, 2);
+        }
     }
 
 
@@ -556,5 +597,18 @@ class FluidSimRenderer {
         cancelAnimationFrame(this.requestAnimationFrameID);
         this.requestAnimationFrameID = undefined;
         gl.useProgram(null);
+    }
+
+
+    ///////////////////////////////////////// Helper Functions ////////////////////////////////////////////////////////
+
+    clearTexture(tex, r = 0, g = 0, b = 0, a = 0){
+        let gl = this.gl;
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        gl.clearColor(r, g, b, a);
+        
+        gl.clear(gl.COLOR_BUFFER_BIT);
     }
 }

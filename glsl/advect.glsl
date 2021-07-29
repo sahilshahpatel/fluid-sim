@@ -27,7 +27,8 @@ uniform vec2 res;           // Texture resolution
 
 void main(){
     // Get our previous velocity and trace it back in time
-    vec2 v = texture(vel, fragUV).xy;
-    vec2 source = fragUV * res - v * dt;
-    xNext = texture(x, source / res);
+    vec2 v = texture(vel, fragUV).xy / res;
+    vec2 source = fragUV - v * dt;
+    
+    xNext = texture(x, source);
 }
