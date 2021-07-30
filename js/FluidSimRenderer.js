@@ -21,19 +21,22 @@ class FluidSimRenderer {
 
         
         ////////////////////////////////////// Configuration parameters ///////////////////////////////////////////////
-        this.dataResolution = [320, 200];
-        this.renderResolution = [320, 200]; //[800, 500];
-        this.uResetType = 1;
-        this.uDiffusion = 1;
-        this.iterations = 50;
-
-        [this.canvas.width, this.canvas.height] = this.renderResolution;
+        this.settings = {
+            dataResolution: [320, 200],
+            renderResolution: [800, 500],
+            dyeDiffusionStrength: 1,
+            velocityDiffusionStrength: 1,
+            diffusionIterations: 25,
+            projectionIterations: 40,
+        }
 
         
         ////////////////////////////////////// Initialize internal fields /////////////////////////////////////////////
         this.requestAnimationFrameID = undefined;
         this.previousTime = 0;
         this.deltaTime = 0;
+        [this.canvas.width, this.canvas.height] = this.settings.renderResolution;
+
         
         ////////////////////////////////////// Create required textures and VAOs //////////////////////////////////////
         let createTexture = () => {
@@ -48,7 +51,7 @@ class FluidSimRenderer {
 
             // All textures will be the same format so that we can have a single temp texture we swap with.
             // RGBA float textures seem the most supported -- RGB32F is not supported on Chrome, for example
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, ...this.dataResolution, 0, gl.RGBA, gl.FLOAT, null);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, ...this.settings.dataResolution, 0, gl.RGBA, gl.FLOAT, null);
             return texture;
         }
 
@@ -90,8 +93,8 @@ class FluidSimRenderer {
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.quad.data), gl.STATIC_DRAW);
 
         // dx, dy are deltas to get our lines to go straight through data cell centers
-        let dx = 1 / this.dataResolution[0];
-        let dy = 1 / this.dataResolution[1];
+        let dx = 1 / this.settings.dataResolution[0];
+        let dy = 1 / this.settings.dataResolution[1];
         this.boundary = {
             vao: gl.createVertexArray(),
             buffer: gl.createBuffer(),
@@ -134,8 +137,8 @@ class FluidSimRenderer {
         };
 
         let getNextPos = e => [
-            e.offsetX * this.dataResolution[0] / this.canvas.clientWidth,
-            (this.canvas.offsetHeight - e.offsetY) * this.dataResolution[1] / this.canvas.clientHeight
+            e.offsetX * this.settings.dataResolution[0] / this.canvas.clientWidth,
+            (this.canvas.offsetHeight - e.offsetY) * this.settings.dataResolution[1] / this.canvas.clientHeight
         ];
 
         this.mousedown = false;
@@ -238,87 +241,81 @@ class FluidSimRenderer {
     update(deltaTime){
         let gl = this.gl;
 
-        // If reset flag is low, update as normal, otherwise reset
-        if(this.uResetType > 0){
-            // TODO: Re-implement reset but just reset to all 0s (no presets)
-            this.uResetType = 0;
-
-            this.clearTexture(this.dyeTexture);
-            this.clearTexture(this.velocityTexture);
-        }
-        else{
-
-            // All texture operations output to this.outputTexture, so we will have to swap
-            // around our textures to mimic outputting to the actual one we want. This is
-            // a necessary step because WebGL cannot output to a texture which is also an 
-            // input uniform which is often what we want!
-            let tmp; // Used to swap textures
+        // All texture operations output to this.outputTexture, so we will have to swap
+        // around our textures to mimic outputting to the actual one we want. This is
+        // a necessary step because WebGL cannot output to a texture which is also an 
+        // input uniform which is often what we want!
+        let tmp; // Used to swap textures
 
 
-            ///////////////////////////////////////// Step 1: Advection ///////////////////////////////////////////////
-            // a) Velocity
-            this.advect(this.velocityTexture, this.velocityTexture, deltaTime);
-            tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
-            
-            // b) Dye
-            this.advect(this.dyeTexture, this.velocityTexture, deltaTime);
-            tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
-            
+        ///////////////////////////////////////// Step 1: Advection ///////////////////////////////////////////////
+        // a) Velocity
+        this.advect(this.velocityTexture, this.velocityTexture, deltaTime);
+        tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
+        
+        // b) Dye
+        this.advect(this.dyeTexture, this.velocityTexture, deltaTime);
+        tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
+        
 
-            ///////////////////////////////////////// Step 2: Diffusion ///////////////////////////////////////////////
-            // a) Velocity
-            let vk = 1 * deltaTime;
-            for(let i = 0; i < 50; i++){
+        ///////////////////////////////////////// Step 2: Diffusion ///////////////////////////////////////////////
+        // a) Velocity
+        if(this.settings.velocityDiffusionStrength != 0){
+            let vk = this.settings.velocityDiffusionStrength * deltaTime;
+            for(let i = 0; i < this.settings.diffusionIterations; i++){
                 this.jacobi(this.velocityTexture, this.velocityTexture, 4/vk, 4/vk * (1 + vk));
                 tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
             }
-            
-            // b) Dye
-            let dk = 1 * deltaTime;
-            for(let i = 0; i < 25; i++){
+        }
+
+        // b) Dye
+        if(this.settings.dyeDiffusionStrength != 0){
+            let dk = this.settings.dyeDiffusionStrength * deltaTime;
+            for(let i = 0; i < this.settings.diffusionIterations; i++){
                 this.jacobi(this.dyeTexture, this.dyeTexture, 4/dk, 4/dk * (1 + dk));
                 tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
             }
-
-
-            ///////////////////////////////////////// Step 3: External Forces /////////////////////////////////////////
-            let strength = this.mousedown ? this.mouse.vel : [0, 0];
-            this.applyForces(this.velocityTexture, deltaTime, this.mouse.pos, 50, strength);
-            tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
-
-
-            ///////////////////////////////////////// Step 4: Projection //////////////////////////////////////////////
-            // a) Compute divergence of velocity
-            this.computeDivergence(this.velocityTexture);
-            tmp = this.divergenceTexture; this.divergenceTexture = this.outputTexture; this.outputTexture = tmp;
-
-            // b) Compute pressure
-            this.clearTexture(this.pressureTexture);
-            for(let i = 0; i < 40; i++){
-                this.jacobi(this.pressureTexture, this.divergenceTexture, -1, 4);
-                tmp = this.pressureTexture; this.pressureTexture = this.outputTexture; this.outputTexture = tmp;
-            }
-            
-            // c) Enforce boundary condition on pressure (must be equal to inner neighbor)
-            this.enforceBoundary(this.pressureTexture, 1);
-            tmp = this.pressureTexture; this.pressureTexture = this.outputTexture; this.outputTexture = tmp;
-
-            // c) Subtract gradient
-            this.removeDivergence(this.velocityTexture, this.pressureTexture);
-            tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
-
-
-            ///////////////////////////////////////// Step 5: Velocity Boundary Conditions ////////////////////////////
-            this.enforceBoundary(this.velocityTexture, -1);
-            tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
-
-            
-            ///////////////////////////////////////// Step 6: Visualization ///////////////////////////////////////////
-            this.render();
         }
 
-        // Unbind to be safe
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        
+        ///////////////////////////////////////// Step 3: External Forces /////////////////////////////////////////
+        let strength = this.mousedown ? this.mouse.vel : [0, 0];
+        this.applyForces(this.velocityTexture, deltaTime, this.mouse.pos, 50, strength);
+        tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
+
+        strength = this.mousedown ? [50, 0] : [0, 0];
+        this.applyForces(this.dyeTexture, deltaTime, this.mouse.pos, 50, strength);
+        tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
+
+
+        ///////////////////////////////////////// Step 4: Projection //////////////////////////////////////////////
+        // a) Compute divergence of velocity
+        this.computeDivergence(this.velocityTexture);
+        tmp = this.divergenceTexture; this.divergenceTexture = this.outputTexture; this.outputTexture = tmp;
+
+        // b) Compute pressure
+        this.clearTexture(this.pressureTexture);
+        for(let i = 0; i < this.settings.projectionIterations; i++){
+            this.jacobi(this.pressureTexture, this.divergenceTexture, -1, 4);
+            tmp = this.pressureTexture; this.pressureTexture = this.outputTexture; this.outputTexture = tmp;
+        }
+        
+        // c) Enforce boundary condition on pressure (must be equal to inner neighbor)
+        this.enforceBoundary(this.pressureTexture, 1);
+        tmp = this.pressureTexture; this.pressureTexture = this.outputTexture; this.outputTexture = tmp;
+
+        // c) Subtract gradient
+        this.removeDivergence(this.velocityTexture, this.pressureTexture);
+        tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
+
+
+        ///////////////////////////////////////// Step 5: Velocity Boundary Conditions ////////////////////////////
+        this.enforceBoundary(this.velocityTexture, -1);
+        tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
+
+        
+        ///////////////////////////////////////// Step 6: Visualization ///////////////////////////////////////////
+        this.render();
     }
 
 
@@ -352,11 +349,11 @@ class FluidSimRenderer {
         gl.bindTexture(gl.TEXTURE_2D, vel);
 
         gl.uniform1f(this.advectionUniforms.dt, dt);
-        gl.uniform2fv(this.advectionUniforms.res, this.dataResolution);
+        gl.uniform2fv(this.advectionUniforms.res, this.settings.dataResolution);
 
         // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-        gl.viewport(0, 0, ...this.dataResolution);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
         let status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
@@ -399,11 +396,11 @@ class FluidSimRenderer {
 
         gl.uniform1f(this.jacobiUniforms.alpha, alpha);
         gl.uniform1f(this.jacobiUniforms.rBeta, 1/beta);
-        gl.uniform2fv(this.jacobiUniforms.res, this.dataResolution);
+        gl.uniform2fv(this.jacobiUniforms.res, this.settings.dataResolution);
 
         // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-        gl.viewport(0, 0, ...this.dataResolution);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
         // Run program
@@ -434,14 +431,14 @@ class FluidSimRenderer {
         gl.bindTexture(gl.TEXTURE_2D, vel);
 
         gl.uniform1f(this.forcesUniforms.dt, dt);
-        gl.uniform2fv(this.forcesUniforms.res, this.dataResolution);
+        gl.uniform2fv(this.forcesUniforms.res, this.settings.dataResolution);
         gl.uniform2fv(this.forcesUniforms.userForcePos, userForcePos);
         gl.uniform1f(this.forcesUniforms.userForceRad, userForceRad);
         gl.uniform2fv(this.forcesUniforms.userForceStrength, userForceStrength);
 
         // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-        gl.viewport(0, 0, ...this.dataResolution);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
         // Run program
@@ -467,11 +464,11 @@ class FluidSimRenderer {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, x);
 
-        gl.uniform2fv(this.divergenceUniforms.res, this.dataResolution);
+        gl.uniform2fv(this.divergenceUniforms.res, this.settings.dataResolution);
 
         // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-        gl.viewport(0, 0, ...this.dataResolution);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
         // Run program
@@ -502,11 +499,11 @@ class FluidSimRenderer {
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, p);
 
-        gl.uniform2fv(this.removeDivergenceUniforms.res, this.dataResolution);
+        gl.uniform2fv(this.removeDivergenceUniforms.res, this.settings.dataResolution);
 
         // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-        gl.viewport(0, 0, ...this.dataResolution);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
         // Run program
@@ -533,12 +530,12 @@ class FluidSimRenderer {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, x);
 
-        gl.uniform2fv(this.boundaryUniforms.res, this.dataResolution);
+        gl.uniform2fv(this.boundaryUniforms.res, this.settings.dataResolution);
         gl.uniform1f(this.boundaryUniforms.coeff, coeff);
 
         // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-        gl.viewport(0, 0, ...this.dataResolution);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
 
         // We will need to repeat this process with different offsets for each boundary line
@@ -571,16 +568,12 @@ class FluidSimRenderer {
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture);
 
-        gl.uniform2fv(this.renderUniforms.dataRes, this.dataResolution);
+        gl.uniform2fv(this.renderUniforms.dataRes, this.settings.dataResolution);
 
         // Run program (and render to screen)
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.viewport(0, 0, ...this.renderResolution);
+        gl.viewport(0, 0, ...this.settings.renderResolution);
         gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
-    }
-
-    play(){
-        this.requestAnimationFrameID = requestAnimationFrame(this.animate.bind(this));
     }
 
     animate(time){
@@ -592,11 +585,20 @@ class FluidSimRenderer {
         this.requestAnimationFrameID = requestAnimationFrame(this.animate.bind(this));
     }
 
+    play(){
+        this.requestAnimationFrameID = requestAnimationFrame(this.animate.bind(this));
+    }
+
     pause(){
         let gl = this.gl;
         cancelAnimationFrame(this.requestAnimationFrameID);
         this.requestAnimationFrameID = undefined;
         gl.useProgram(null);
+    }
+
+    reset(){
+        this.clearTexture(this.dyeTexture);
+        this.clearTexture(this.velocityTexture);
     }
 
 
