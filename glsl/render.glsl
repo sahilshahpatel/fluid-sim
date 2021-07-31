@@ -19,7 +19,7 @@ uniform sampler2D vel;      // Velocity data
 uniform vec2 dataRes;       // Texture resolution
 
 /* Helper Functions */
-vec3 drawArrow(void);
+float drawArrow(void);
 vec2 rotate(vec2 p, float a);
 float sdTriangle( in vec2 p, in vec2 p0, in vec2 p1, in vec2 p2 );
 float sdBox( in vec2 p, in vec2 b );
@@ -27,35 +27,40 @@ float sdBox( in vec2 p, in vec2 b );
 
 void main(){
     float d = texture(dye, fragUV).x;
-    vec2  v = texture(vel, fragUV).xy;
 
-    vec3 arrow = drawArrow();
+    vec4 background = vec4(0.02, 0.2, 0.5, 1);
+    vec4 fluid = vec4(0.75, 1, 1, 1);
 
-    fragColor = length(arrow) == 0. ? vec4(d, 0, 0, 1) : vec4(arrow, 1);
+    // Clamp density to [0, 1] so that it can be a proper alpha
+    d = clamp(d, 0., 1.);
+    fragColor = mix(background, fluid, d);
+
+    float inArrow = drawArrow();
+
+    fragColor = inArrow == 1. ? vec4(1, 0, 0, 1) : fragColor;
 }
 
 
 const float arrowDensity = 16.;
-vec3 drawArrow(void){
+float drawArrow(void){
     // Velocity should be measured at center for entire arrow
     vec2 cellSelector = normalize(dataRes) * arrowDensity;
-    vec2 v = texture(vel, (floor(fragUV * cellSelector)  + 0.5)/ cellSelector).xy;
+    vec2 v = texture(vel, (floor(fragUV * cellSelector)  + 0.5) / cellSelector).xy;
 
-    if(length(v) <= 0.) return vec3(0);
+    if(length(v) <= 0.) return 0.;
 
     vec2 pos = fragUV * cellSelector;
     vec2 p = (fract(pos) - 0.5) * 2.; // This is [-1, 1] position w/ origin at center of cell
 
     // Resize and rotate p to orient arrow
-    float size = clamp(length(v / dataRes * vec2(32., 20.)), 0.01, 1.);
+    float size = clamp(length(v / dataRes * vec2(32., 20.)), 0.1, 1.);
     p = rotate(p / size, atan(v.y, v.x));
 
     // We will use an SDF to draw over arrows
     float d = sdTriangle(p, vec2(0.1, 0.5), vec2(0.1, -0.5), vec2(0.75, 0));
     d = min(d, sdBox(p - vec2(-0.2, 0), vec2(0.3, 0.1)));
 
-    vec3 color = vec3(0, 1, 1) * (1. - step(0., d));
-    return color;
+    return 1. - step(0., d);
 }
 
 

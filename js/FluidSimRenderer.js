@@ -277,14 +277,15 @@ class FluidSimRenderer {
             }
         }
 
-        
+
         ///////////////////////////////////////// Step 3: External Forces /////////////////////////////////////////
+        let minDim = Math.min(this.settings.dataResolution[0], this.settings.dataResolution[1]);
         let strength = this.mousedown ? this.mouse.vel : [0, 0];
-        this.applyForces(this.velocityTexture, deltaTime, this.mouse.pos, 50, strength);
+        this.applyForces(this.velocityTexture, deltaTime, this.mouse.pos, 0.5 * minDim, strength);
         tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
 
         strength = this.mousedown ? [50, 0] : [0, 0];
-        this.applyForces(this.dyeTexture, deltaTime, this.mouse.pos, 50, strength);
+        this.applyForces(this.dyeTexture, deltaTime, this.mouse.pos, 0.025 * minDim, strength);
         tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
 
 

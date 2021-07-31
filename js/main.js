@@ -30,7 +30,8 @@ window.addEventListener("load", () => {
     let refreshButton = document.getElementById("refreshButton");
     refreshButton.addEventListener("click", () => {
         simulator.pause();
-        simulator.init().then(() => {simulator.uResetType = 1; simulator.play()});
+        simulator.reset();
+        simulator.init().then(() => { simulator.play() });
     });
 
     let settings = document.getElementById("settings");
