@@ -8,11 +8,11 @@ precision mediump float;
 
 // Program Description:
 // ----------------------------------------------------------------------------------------------------------------------
-// Computes the divergence of a given vector field
+// Computes the curl of a given vector field
 // ----------------------------------------------------------------------------------------------------------------------
 
 in vec2 fragUV;                 // Fragment position with [0, 1] coordinates and bottom-left origin
-out vec4 div;                   // The divergence for this cell
+out vec4 curl;                  // The curl for this cell
 
 uniform sampler2D x;            // The vector field
 uniform vec2 res;               // Texture resolution
@@ -25,5 +25,8 @@ void main(){
     vec4 down  = texture(x, fragUV + vec2( 0, -1) / res);
     vec4 up    = texture(x, fragUV + vec2( 0,  1) / res);
 
-    div = vec4((right.x - left.x + up.y - down.y) * 0.5, 0., 0., 0.);
+    vec2 grad = vec2(right.x - left.x, up.y - down.y) * 0.5;
+    vec2 u = texture(x, fragUV).xy;
+
+    curl = vec4(cross(vec3(grad, 0.), vec3(u, 0.)), 0.);
 }

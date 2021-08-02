@@ -67,6 +67,7 @@ class FluidSimRenderer {
         // textures instead of showing up on screen. This allows us to use them
         // in subsequent steps.
         this.framebuffer = gl.createFramebuffer();
+        this.copyFramebuffer = gl.createFramebuffer(); // We need a second FB for copying textures
 
 
         // We will also need two sets of Vertex Array Objects (VAOs) and 
@@ -123,9 +124,11 @@ class FluidSimRenderer {
 
         this.advectionUniforms  = createLocations(["x", "vel", "dt", "res"]);
         this.jacobiUniforms     = createLocations(["x", "b", "alpha", "rBeta", "res"]);
-        this.forcesUniforms     = createLocations(["vel", "dt", "res", "userForceRad", "userForcePos", "userForceStrength"]);
+        this.forcesUniforms     = createLocations(["vel", "curl", "dt", "res", "userForceRad", "userForcePos", 
+                                                   "userForceStrength", "vorticityStrength"]);
         this.divergenceUniforms = createLocations(["x", "res"]);
         this.removeDivergenceUniforms = createLocations(["vel", "p", "res"]);
+        this.curlUniforms       = createLocations(["x", "res"]);
         this.boundaryUniforms   = createLocations(["x", "res", "offset", "coeff"]);
         this.renderUniforms     = createLocations(["dye", "vel", "dataRes"]);
 
@@ -176,9 +179,10 @@ class FluidSimRenderer {
             Promise.all([fetchText('../glsl/basicVS.glsl'), fetchText('../glsl/advect.glsl'),
                          fetchText('../glsl/jacobi.glsl'), fetchText('../glsl/forces.glsl'),
                          fetchText('../glsl/divergence.glsl'), fetchText('../glsl/removeDivergence.glsl'),
-                         fetchText('../glsl/boundary.glsl'), fetchText('../glsl/render.glsl')])
+                         fetchText('../glsl/curl.glsl'), fetchText('../glsl/boundary.glsl'),
+                         fetchText('../glsl/render.glsl')])
             .then(([basicVSource, advectSource, jacobiSource, forcesSource, divergenceSource, 
-                    removeDivergenceSource, boundarySource, renderSource]) => {
+                    removeDivergenceSource, curlSource, boundarySource, renderSource]) => {
                 
                 // We first create shaders and then shader programs from our gathered sources.
                 // Each operation we want to perform on our data is its own shader program.
@@ -194,6 +198,7 @@ class FluidSimRenderer {
                 let forcesFS = loadShaderFromSource(gl, forcesSource, "x-shader/x-fragment");
                 let divergenceFS = loadShaderFromSource(gl, divergenceSource, "x-shader/x-fragment");
                 let removeDivergenceFS = loadShaderFromSource(gl, removeDivergenceSource, "x-shader/x-fragment");
+                let curlFS = loadShaderFromSource(gl, curlSource, "x-shader/x-fragment");
                 let boundaryFS = loadShaderFromSource(gl, boundarySource, "x-shader/x-fragment");
                 let renderFS = loadShaderFromSource(gl, renderSource, "x-shader/x-fragment");
 
@@ -223,6 +228,10 @@ class FluidSimRenderer {
                 if(!this.removeDivergenceProgram) { reject(); return; }
                 initUniforms(this.removeDivergenceUniforms, this.removeDivergenceProgram);
 
+                this.curlProgram = createShaderProgram(gl, basicVS, curlFS);
+                if(!this.curlProgram) { reject(); return; }
+                initUniforms(this.curlUniforms, this.curlProgram);
+
                 this.boundaryProgram = createShaderProgram(gl, basicVS, boundaryFS);
                 if(!this.boundaryProgram) { reject(); return; }
                 initUniforms(this.boundaryUniforms, this.boundaryProgram);
@@ -239,8 +248,6 @@ class FluidSimRenderer {
 
     /* Run the Simulation Shader to get this frame's fluid data */
     update(deltaTime){
-        let gl = this.gl;
-
         // All texture operations output to this.outputTexture, so we will have to swap
         // around our textures to mimic outputting to the actual one we want. This is
         // a necessary step because WebGL cannot output to a texture which is also an 
@@ -249,11 +256,11 @@ class FluidSimRenderer {
 
 
         ///////////////////////////////////////// Step 1: Advection ///////////////////////////////////////////////
-        // a) Velocity
+        // a) Advect velocity
         this.advect(this.velocityTexture, this.velocityTexture, deltaTime);
         tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
         
-        // b) Dye
+        // b) Advect dye
         this.advect(this.dyeTexture, this.velocityTexture, deltaTime);
         tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
         
@@ -279,13 +286,19 @@ class FluidSimRenderer {
 
 
         ///////////////////////////////////////// Step 3: External Forces /////////////////////////////////////////
+        // a) Compute vorticity (curl)
+        this.computeCurl(this.velocityTexture);
+        tmp = this.vorticityTexture; this.vorticityTexture = this.outputTexture; this.outputTexture = tmp;
+        
+        // b) Apply forces to velocity field
         let minDim = Math.min(this.settings.dataResolution[0], this.settings.dataResolution[1]);
         let strength = this.mousedown ? this.mouse.vel : [0, 0];
-        this.applyForces(this.velocityTexture, deltaTime, this.mouse.pos, 0.5 * minDim, strength);
+        this.applyForces(this.velocityTexture, this.vorticityTexture, deltaTime, this.mouse.pos, 0.75 * minDim, strength, 10);
         tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
 
-        strength = this.mousedown ? [50, 0] : [0, 0];
-        this.applyForces(this.dyeTexture, deltaTime, this.mouse.pos, 0.025 * minDim, strength);
+        // c) "Apply forces" to dye field (inserts dye)
+        strength = this.mousedown ? [25, 0] : [0, 0];
+        this.applyForces(this.dyeTexture, this.vorticityTexture, deltaTime, this.mouse.pos, 0.3 * minDim, strength, 0);
         tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
 
 
@@ -299,23 +312,21 @@ class FluidSimRenderer {
         for(let i = 0; i < this.settings.projectionIterations; i++){
             this.jacobi(this.pressureTexture, this.divergenceTexture, -1, 4);
             tmp = this.pressureTexture; this.pressureTexture = this.outputTexture; this.outputTexture = tmp;
+
+            this.enforceBoundary(this.pressureTexture, 1);
+            tmp = this.pressureTexture; this.pressureTexture = this.outputTexture; this.outputTexture = tmp;
         }
-        
-        // c) Enforce boundary condition on pressure (must be equal to inner neighbor)
-        this.enforceBoundary(this.pressureTexture, 1);
-        tmp = this.pressureTexture; this.pressureTexture = this.outputTexture; this.outputTexture = tmp;
 
-        // c) Subtract gradient
-        this.removeDivergence(this.velocityTexture, this.pressureTexture);
-        tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
-
-
-        ///////////////////////////////////////// Step 5: Velocity Boundary Conditions ////////////////////////////
+        // c) Enforce velocity boundary condition
         this.enforceBoundary(this.velocityTexture, -1);
         tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
 
+        // d) Subtract gradient
+        this.removeDivergence(this.velocityTexture, this.pressureTexture);
+        tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;        
+
         
-        ///////////////////////////////////////// Step 6: Visualization ///////////////////////////////////////////
+        ///////////////////////////////////////// Step 5: Visualization ///////////////////////////////////////////
         this.render();
     }
 
@@ -411,12 +422,14 @@ class FluidSimRenderer {
     /** Applies forces by modifying velocity
      * See ../glsl/forces.glsl for detailed information
      * @param {*} vel
+     * @param {*} curl
      * @param {*} dt 
      * @param {*} userForcePos
      * @param {*} userForceRad
      * @param {*} userForceStrength 
+     * @param {*} vorticityStrength
      */
-    applyForces(vel, dt, userForcePos, userForceRad, userForceStrength){
+    applyForces(vel, curl, dt, userForcePos, userForceRad, userForceStrength, vorticityStrength){
         let gl = this.gl;
 
         // Set up WebGL to use this program and the correct geometry
@@ -431,11 +444,16 @@ class FluidSimRenderer {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, vel);
 
+        gl.uniform1i(this.forcesUniforms.curl, 1);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, curl);
+
         gl.uniform1f(this.forcesUniforms.dt, dt);
         gl.uniform2fv(this.forcesUniforms.res, this.settings.dataResolution);
         gl.uniform2fv(this.forcesUniforms.userForcePos, userForcePos);
         gl.uniform1f(this.forcesUniforms.userForceRad, userForceRad);
         gl.uniform2fv(this.forcesUniforms.userForceStrength, userForceStrength);
+        gl.uniform1f(this.forcesUniforms.vorticityStrength, vorticityStrength);
 
         // Set to render to outputTexture
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
@@ -511,6 +529,37 @@ class FluidSimRenderer {
         gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
     }
 
+    /**
+     * Computes curl of vector field X around vector from vector field V
+     * See ../glsl/curl.glsl for detailed information
+     * @param {*} x
+     */
+    computeCurl(x){
+        let gl = this.gl;
+
+        // Set up WebGL to use this program and the correct geometry
+        gl.useProgram(this.curlProgram);
+        gl.bindVertexArray(this.quad.vao);
+        gl.enableVertexAttribArray(this.curlProgram.vertexPositionAttribute);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.quad.buffer);
+        gl.vertexAttribPointer(this.curlProgram.vertexPositionAttribute, this.quad.itemSize, gl.FLOAT, false, 0, 0);
+
+        // Send uniforms
+        gl.uniform1i(this.curlUniforms.x, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, x);
+
+        gl.uniform2fv(this.curlUniforms.res, this.settings.dataResolution);
+
+        // Set to render to outputTexture
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
+
+        // Run program
+        gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
+    }
+
     /** Enforces boundary conditions on the given texture
      * See ../glsl/boundary.glsl for detailed information
      * @param {*} x
@@ -518,6 +567,10 @@ class FluidSimRenderer {
      */
     enforceBoundary(x, coeff){
         let gl = this.gl;
+
+        // First thing's first, we must copy x to the output texture so that we can copy the quad's data
+        // before modifying the boundary data! Otherwise our output will not be defined for the quad itself
+        this.copyTexture(x, this.outputTexture);
 
         // Set up WebGL to use this program and the correct geometry
         gl.useProgram(this.boundaryProgram);
@@ -550,8 +603,6 @@ class FluidSimRenderer {
 
     render(){
         let gl = this.gl;
-
-        // TODO: Can I use quad here? Or do I need a fullQuad or something?
 
         // Set up WebGL to use this program and the correct geometry
         gl.useProgram(this.renderProgram);
@@ -613,5 +664,20 @@ class FluidSimRenderer {
         gl.clearColor(r, g, b, a);
         
         gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+
+    copyTexture(src, dst){
+        let gl = this.gl;
+
+        // From https://stackoverflow.com/questions/26303783/webgl-copy-texture-framebuffer-to-texture-framebuffer
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffer);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, src, 0);
+
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.copyFramebuffer);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, dst, 0);
+
+        gl.blitFramebuffer(0, 0, ...this.settings.dataResolution, 0, 0, ...this.settings.dataResolution, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     }
 }

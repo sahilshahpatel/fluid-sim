@@ -31,6 +31,6 @@ void main(){
     vec2 grad = vec2(right - left, up - down) * 0.5;
 
     // Get our previous velocity and subtract out the gradient
-    vec4 v = texture(vel, fragUV);
-    velNext = v - vec4(grad, 0., 0.);
+    vec2 v = texture(vel, fragUV).xy;
+    velNext = vec4(v - grad, 0., 0.);
 }

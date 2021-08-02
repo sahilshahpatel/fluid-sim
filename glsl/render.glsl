@@ -27,6 +27,7 @@ float sdBox( in vec2 p, in vec2 b );
 
 void main(){
     float d = texture(dye, fragUV).x;
+    vec2 v = texture(vel, fragUV).xy;
 
     vec4 background = vec4(0.02, 0.2, 0.5, 1);
     vec4 fluid = vec4(0.75, 1, 1, 1);
