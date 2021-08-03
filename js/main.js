@@ -33,17 +33,4 @@ window.addEventListener("load", () => {
         simulator.reset();
         simulator.init().then(() => { simulator.play() });
     });
-
-    let settings = document.getElementById("settings");
-    Array.from(settings.getElementsByTagName("input")).forEach(elt => {
-        switch(elt.type){
-            case "range":
-                elt.addEventListener("input", e => { simulator.settings[elt.id] = Number(e.target.value); });
-                break;
-
-            case "checkbox":
-                elt.addEventListener("input", e => { simulator.settings[elt.id] = e.target.checked ? 1 : 0; });
-                break;
-        }
-    });
 });
