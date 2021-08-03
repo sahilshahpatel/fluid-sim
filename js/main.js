@@ -36,11 +36,14 @@ window.addEventListener("load", () => {
 
     let settings = document.getElementById("settings");
     Array.from(settings.getElementsByTagName("input")).forEach(elt => {
-        elt.addEventListener("input", e => { simulator.settings[elt.id] = Number(e.target.value) });
-    });
+        switch(elt.type){
+            case "range":
+                elt.addEventListener("input", e => { simulator.settings[elt.id] = Number(e.target.value); });
+                break;
 
-    // let diffusionSlider = document.getElementById("dyeDiffusionStrength");
-    // diffusionSlider.addEventListener("input", e => {
-    //     simulator.settings.dyeDiffusionStrength = Number(e.target.value);
-    // });
+            case "checkbox":
+                elt.addEventListener("input", e => { simulator.settings[elt.id] = e.target.checked ? 1 : 0; });
+                break;
+        }
+    });
 });

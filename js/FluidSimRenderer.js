@@ -28,7 +28,8 @@ class FluidSimRenderer {
             velocityDiffusionStrength: 1,
             diffusionIterations: 25,
             projectionIterations: 40,
-            vorticityConfinement: 10,
+            vorticityConfinement: 5,
+            drawArrows: 0,
         }
 
         
@@ -131,7 +132,7 @@ class FluidSimRenderer {
         this.removeDivergenceUniforms = createLocations(["vel", "p", "res"]);
         this.curlUniforms       = createLocations(["x", "res"]);
         this.boundaryUniforms   = createLocations(["x", "res", "offset", "coeff"]);
-        this.renderUniforms     = createLocations(["dye", "vel", "dataRes"]);
+        this.renderUniforms     = createLocations(["dye", "vel", "drawArrows", "dataRes"]);
 
 
         ////////////////////////////////////// Mouse Tracking /////////////////////////////////////////////////////////
@@ -621,6 +622,7 @@ class FluidSimRenderer {
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTexture);
 
+        gl.uniform1i(this.renderUniforms.drawArrows, this.settings.drawArrows);
         gl.uniform2fv(this.renderUniforms.dataRes, this.settings.dataResolution);
 
         // Run program (and render to screen)

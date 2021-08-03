@@ -16,6 +16,7 @@ out vec4 fragColor;         // The output color cell
 
 uniform sampler2D dye;      // Dye density data
 uniform sampler2D vel;      // Velocity data
+uniform int drawArrows;     // Decides if we should render vector field arrow
 uniform vec2 dataRes;       // Texture resolution
 
 /* Helper Functions */
@@ -38,7 +39,7 @@ void main(){
 
     float inArrow = drawArrow();
 
-    fragColor = inArrow == 1. ? vec4(1, 0, 0, 1) : fragColor;
+    fragColor = (drawArrows == 1 && inArrow == 1.) ? vec4(1, 0, 0, 1) : fragColor;
 }
 
 
