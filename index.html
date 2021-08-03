@@ -65,12 +65,12 @@
                         <div id="settings" class="col">
                             <div class="col d-flex justify-content-between">
                                 <label for="dyeDiffusionStrength">Dye Diffusion</label>
-                                <input id="dyeDiffusionStrength" type="range" min="0" max="20" step="0.1" value="1">
+                                <input id="dyeDiffusionStrength" type="range" min="0" max="10" step="0.1" value="0">
                             </div>
 
                             <div class="col d-flex justify-content-between">
                                 <label for="velocityDiffusionStrength">Velocity Diffusion</label>
-                                <input id="velocityDiffusionStrength" type="range" min="0" max="20" step="0.1" value="1">
+                                <input id="velocityDiffusionStrength" type="range" min="0" max="10" step="0.1" value="1">
                             </div>
 
                             <div class="col d-flex justify-content-between">
@@ -81,6 +81,11 @@
                             <div class="col d-flex justify-content-between">
                                 <label for="projectionIterations">Projection Iterations</label>
                                 <input id="projectionIterations" type="range" min="40" max="80" step="1" value="40">
+                            </div>
+
+                            <div class="col d-flex justify-content-between">
+                                <label for="vorticityConfinement">Vorticity</label>
+                                <input id="vorticityConfinement" type="range" min="0" max="20" step="0.1" value="10">
                             </div>
                         </div>
                     </div>

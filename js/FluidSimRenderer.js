@@ -24,10 +24,11 @@ class FluidSimRenderer {
         this.settings = {
             dataResolution: [320, 200],
             renderResolution: [800, 500],
-            dyeDiffusionStrength: 1,
+            dyeDiffusionStrength: 0,
             velocityDiffusionStrength: 1,
             diffusionIterations: 25,
             projectionIterations: 40,
+            vorticityConfinement: 10,
         }
 
         
@@ -293,7 +294,7 @@ class FluidSimRenderer {
         // b) Apply forces to velocity field
         let minDim = Math.min(this.settings.dataResolution[0], this.settings.dataResolution[1]);
         let strength = this.mousedown ? this.mouse.vel : [0, 0];
-        this.applyForces(this.velocityTexture, this.vorticityTexture, deltaTime, this.mouse.pos, 0.75 * minDim, strength, 10);
+        this.applyForces(this.velocityTexture, this.vorticityTexture, deltaTime, this.mouse.pos, 0.75 * minDim, strength, this.settings.vorticityConfinement);
         tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
 
         // c) "Apply forces" to dye field (inserts dye)

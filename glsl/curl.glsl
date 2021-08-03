@@ -8,7 +8,7 @@ precision mediump float;
 
 // Program Description:
 // ----------------------------------------------------------------------------------------------------------------------
-// Computes the curl of a given vector field
+// Computes the curl of a given 2D vector field
 // ----------------------------------------------------------------------------------------------------------------------
 
 in vec2 fragUV;                 // Fragment position with [0, 1] coordinates and bottom-left origin
@@ -25,8 +25,10 @@ void main(){
     vec4 down  = texture(x, fragUV + vec2( 0, -1) / res);
     vec4 up    = texture(x, fragUV + vec2( 0,  1) / res);
 
-    vec2 grad = vec2(right.x - left.x, up.y - down.y) * 0.5;
-    vec2 u = texture(x, fragUV).xy;
+    float dfx = right.x - left.x;
+    float dfy = up.y - down.y;
 
-    curl = vec4(cross(vec3(grad, 0.), vec3(u, 0.)), 0.);
+    // Curl of a 2D vector field is always in the Z component
+    // See https://en.wikipedia.org/wiki/Curl_(mathematics)#Usage
+    curl = vec4(0, 0, dfy - dfx, 0) * 0.5;
 }

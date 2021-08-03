@@ -36,19 +36,20 @@ void main(){
     vec2 sourceDist = fragXY - userForcePos;
     vec2 userForce = userForceStrength * exp(-dot(sourceDist, sourceDist) / userForceRad) * dt;
 
+    velNext = vec4(lastVel + userForce, 0., 0.);
+
     // Vorticity confinement force
-    // TODO: there's a divide by 0 or something here...
-    // vec4 left  = texture(curl, fragUV + vec2(-1,  0) / res);
-    // vec4 right = texture(curl, fragUV + vec2( 1,  0) / res);
-    // vec4 down  = texture(curl, fragUV + vec2( 0, -1) / res);
-    // vec4 up    = texture(curl, fragUV + vec2( 0,  1) / res);
-    
-    // vec2 vorticity = vec2(length(right) - length(left), length(up) - length(down));
-    // vorticity = length(vorticity) > 0. ? normalize(vorticity) : vec2(0.);
-    // vec3 myCurl = texture(curl, fragUV).xyz;
+    if(vorticityStrength > 0.){
+        vec4 left  = texture(curl, fragUV + vec2(-1,  0) / res);
+        vec4 right = texture(curl, fragUV + vec2( 1,  0) / res);
+        vec4 down  = texture(curl, fragUV + vec2( 0, -1) / res);
+        vec4 up    = texture(curl, fragUV + vec2( 0,  1) / res);
+        
+        vec3 vorticity = vec3(length(right) - length(left), length(up) - length(down), 0.);
+        vorticity = length(vorticity) > 0. ? normalize(vorticity) : vec3(0.);
+        vec3 myCurl = texture(curl, fragUV).xyz;
 
-    // vec2 vortForce = vorticityStrength * cross(vec3(vorticity, 0.), myCurl).xy * dt;
-    vec2 vortForce = vec2(0);
-
-    velNext = vec4(lastVel + userForce + vortForce, 0., 0.);
+        vec2 vortForce = vorticityStrength * cross(vorticity, myCurl).xy * dt;
+        velNext += vec4(vortForce, 0., 0.);
+    }
 }
