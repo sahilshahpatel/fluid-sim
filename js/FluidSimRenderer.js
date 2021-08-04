@@ -97,8 +97,8 @@ class FluidSimRenderer {
 
         return new Promise( (resolve, reject) => {
             // Create shader program from sources
-            Promise.all( [fetchText('glsl/basicVS.glsl')] )
-            .then(( [basicVSource] ) => {
+            Promise.all( [fetchText('glsl/basicVS.glsl'), fetchText('glsl/render.glsl')] )
+            .then(( [basicVSource, renderSource] ) => {
                 
                 // We first create shaders and then shader programs from our gathered sources.
                 // Each operation we want to perform on our data is its own shader program.
@@ -111,7 +111,11 @@ class FluidSimRenderer {
                 const FRAGMENT_SHADER = "x-shader/x-fragment";
 
                 let basicVS = loadShaderFromSource(gl, basicVSource, VERTEX_SHADER);
-                
+                let renderFS = loadShaderFromSource(gl, renderSource, FRAGMENT_SHADER);
+
+                this.renderProgram = createShaderProgram(gl, basicVS, renderFS);
+                if(!this.renderProgram) { reject(); return; }
+
 
                 resolve();
             });
@@ -174,7 +178,17 @@ class FluidSimRenderer {
 
 
     render(){
-        // TODO (Chapter 3)
+        let gl = this.gl;
+
+        gl.useProgram(this.renderProgram);
+        gl.bindVertexArray(this.quad.vao);
+        gl.enableVertexAttribArray(this.renderProgram.vertexPositionAttribute);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.quad.buffer);
+        gl.vertexAttribPointer(this.renderProgram.vertexPositionAttribute, this.quad.itemSize, gl.FLOAT, false, 0, 0);
+    
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, ...this.settings.renderResolution);
+        gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
     }
 
 
