@@ -178,11 +178,11 @@ class FluidSimRenderer {
         let gl = this.gl;
         return new Promise( (resolve, reject) => {
             // Create shader program from sources
-            Promise.all([fetchText('../glsl/basicVS.glsl'), fetchText('../glsl/advect.glsl'),
-                         fetchText('../glsl/jacobi.glsl'), fetchText('../glsl/forces.glsl'),
-                         fetchText('../glsl/divergence.glsl'), fetchText('../glsl/removeDivergence.glsl'),
-                         fetchText('../glsl/curl.glsl'), fetchText('../glsl/boundary.glsl'),
-                         fetchText('../glsl/render.glsl')])
+            Promise.all([fetchText('glsl/basicVS.glsl'), fetchText('glsl/advect.glsl'),
+                         fetchText('glsl/jacobi.glsl'), fetchText('glsl/forces.glsl'),
+                         fetchText('glsl/divergence.glsl'), fetchText('glsl/removeDivergence.glsl'),
+                         fetchText('glsl/curl.glsl'), fetchText('glsl/boundary.glsl'),
+                         fetchText('glsl/render.glsl')])
             .then(([basicVSource, advectSource, jacobiSource, forcesSource, divergenceSource, 
                     removeDivergenceSource, curlSource, boundarySource, renderSource]) => {
                 
