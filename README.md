@@ -1,9 +1,6 @@
 # Real-Time Fluid Simulation on the GPU
-This is a WebGL-based fluid simulator inspired by [Inspecto's video](https://www.youtube.com/watch?v=qsYE1wMEMPA). The algorithm is entirely based on Jos Stam's 2003 paper [*Real-Time Fluid Dynamics for Games*](https://www.autodesk.com/research/publications/real-time-fluid-dynamics). The implementation was guided by NVIDIA's [*GPU Gems* chapter](https://developer.download.nvidia.com/books/HTML/gpugems/gpugems_ch38.html) on GPU implementation of Stam's algorithm.
+![Fluid simulator GIF](https://github.com/sahilshahpatel/fluid-sim/wiki/images/final-product.gif)
 
-## Purpose
-This repository is meant to be a guided project for students learning about computer graphics. It was developed for UIUC's SIGGraph student chapter. By implementing this project (guided chapters coming soon on the Wiki) students can expect to learn:
-- The fundamentals of the WebGL API
-- Basic GLSL syntax
-- When and how to apply parallel computation
-- User events in JavaScript for interactivity
+This repository is meant to be a tutorial or guide for college students interested in computer graphics. It was developed as part of UIUC's SIGGraph student chapter.
+
+Check out the [wiki](https://github.com/sahilshahpatel/fluid-sim/wiki) for the full tutorial. You can play with the live simulator [here](https://sahilshahpatel.github.io/fluid-sim/).
