@@ -157,8 +157,8 @@ class FluidSimRenderer {
         return new Promise( (resolve, reject) => {
             // Create shader program from sources
             Promise.all( [fetchText('glsl/basicVS.glsl'), fetchText('glsl/forces.glsl'),
-                          fetchText('glsl/render.glsl')] )
-            .then(( [basicVSource, forcesSource, renderSource] ) => {
+                          fetchText('glsl/advection.glsl'), fetchText('glsl/render.glsl')] )
+            .then(( [basicVSource, forcesSource, advectSource, renderSource] ) => {
                 
                 // We first create shaders and then shader programs from our gathered sources.
                 // Each operation we want to perform on our data is its own shader program.
@@ -172,6 +172,7 @@ class FluidSimRenderer {
 
                 let basicVS = loadShaderFromSource(gl, basicVSource, VERTEX_SHADER);
                 let forcesFS = loadShaderFromSource(gl, forcesSource, FRAGMENT_SHADER);
+                let advectFS = loadShaderFromSource(gl, advectSource, FRAGMENT_SHADER);
                 let renderFS = loadShaderFromSource(gl, renderSource, FRAGMENT_SHADER);
 
                 let createUniforms = (program, names) => {
@@ -185,6 +186,10 @@ class FluidSimRenderer {
                 this.forcesProgram = createShaderProgram(gl, basicVS, forcesFS);
                 if(!this.forcesProgram) { reject(); return; }
                 this.forcesUniforms = createUniforms(this.forcesProgram, ['data', 'mousePos', 'mouseVel', 'radius', 'dt', 'res']);
+
+                this.advectProgram = createShaderProgram(gl, basicVS, advectFS);
+                if(!this.advectProgram) { reject(); return; }
+                this.advectUniforms = createUniforms(this.advectProgram, ['data', 'vel', 'dt', 'res']);
 
                 this.renderProgram = createShaderProgram(gl, basicVS, renderFS);
                 if(!this.renderProgram) { reject(); return; }
@@ -215,6 +220,16 @@ class FluidSimRenderer {
         let tmp; // Used to swap textures
 
 
+        ////////////////////////////////////// Step 1: Advection //////////////////////////////////////////////////////
+        // a) Advect velocity
+        this.advect(this.velocityTexture, this.velocityTexture, deltaTime);
+        tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
+
+        // b) Advect dye
+        this.advect(this.dyeTexture, this.velocityTexture, deltaTime);
+        tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
+
+
         ////////////////////////////////////// Step 3: External Forces ////////////////////////////////////////////////
         // a) Apply forces to velocity
         const radius = 50;
@@ -233,8 +248,46 @@ class FluidSimRenderer {
     // We abstract out each texture operation as a function which takes in the uniform values to pass in.
     // All functions output to this.outputTexture
     
-    advect(){
-        // TODO (Chapter 5)
+    /**
+     * Wrapper for running glsl/advect.glsl
+     * Moves a quantity according to a given velocity field
+     * 
+     * @param {Texture} data 
+     * @param {Texture} vel 
+     * @param {Float} dt 
+     */
+    advect(data, vel, dt){
+        let gl = this.gl;
+
+        // Use advectProgram on the full quad
+        gl.useProgram(this.advectProgram);
+        gl.bindVertexArray(this.quad.vao);
+        gl.enableVertexAttribArray(this.advectProgram.vertexPositionAttribute);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.quad.buffer);
+        gl.vertexAttribPointer(this.advectProgram.vertexPositionAttribute, this.quad.itemSize, gl.FLOAT, false, 0, 0);
+
+        // Set uniforms
+        gl.uniform1i(this.advectUniforms.data, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, data);
+
+        if(data === vel){
+            gl.uniform1i(this.advectUniforms.vel, 0);
+        }
+        else{
+            gl.uniform1i(this.advectUniforms.vel, 1);
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, vel);
+        }
+
+        gl.uniform1f(this.advectUniforms.dt, dt);
+        gl.uniform2fv(this.advectUniforms.res, this.settings.dataResolution);
+
+        // Render to outputTexture
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
+        gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
     }
 
     
