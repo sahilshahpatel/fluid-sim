@@ -27,6 +27,8 @@ class FluidSimRenderer {
         this.settings.renderResolution = [800, 500];        // Resolution of rendering (important for velocity arrow display)
         this.settings.drawRadius = 50;                      // Radius used in applyForces
         this.settings.dyeAmount = 25;                       // Amount of dye used in external forces (in update)
+        this.settings.diffusionIterations = 20;             // Number of jacobi iterations for diffusion
+        this.settings.diffusionStrength = 1;                // Strength of diffusion
 
         
         ////////////////////////////////////// Initialize internal fields /////////////////////////////////////////////
@@ -159,8 +161,9 @@ class FluidSimRenderer {
         return new Promise( (resolve, reject) => {
             // Create shader program from sources
             Promise.all( [fetchText('glsl/basicVS.glsl'), fetchText('glsl/forces.glsl'),
-                          fetchText('glsl/advection.glsl'), fetchText('glsl/render.glsl')] )
-            .then(( [basicVSource, forcesSource, advectSource, renderSource] ) => {
+                          fetchText('glsl/advection.glsl'), fetchText('glsl/jacobi.glsl'),
+                          fetchText('glsl/render.glsl')] )
+            .then(( [basicVSource, forcesSource, advectSource, jacobiSource, renderSource] ) => {
                 
                 // We first create shaders and then shader programs from our gathered sources.
                 // Each operation we want to perform on our data is its own shader program.
@@ -175,6 +178,7 @@ class FluidSimRenderer {
                 let basicVS = loadShaderFromSource(gl, basicVSource, VERTEX_SHADER);
                 let forcesFS = loadShaderFromSource(gl, forcesSource, FRAGMENT_SHADER);
                 let advectFS = loadShaderFromSource(gl, advectSource, FRAGMENT_SHADER);
+                let jacobiFS = loadShaderFromSource(gl, jacobiSource, FRAGMENT_SHADER);
                 let renderFS = loadShaderFromSource(gl, renderSource, FRAGMENT_SHADER);
 
                 let createUniforms = (program, names) => {
@@ -192,6 +196,10 @@ class FluidSimRenderer {
                 this.advectProgram = createShaderProgram(gl, basicVS, advectFS);
                 if(!this.advectProgram) { reject(); return; }
                 this.advectUniforms = createUniforms(this.advectProgram, ['data', 'vel', 'dt', 'res']);
+
+                this.jacobiProgram = createShaderProgram(gl, basicVS, jacobiFS);
+                if(!this.jacobiProgram) { reject(); return; }
+                this.jacobiUniforms = createUniforms(this.jacobiProgram, ['x', 'y', 'alpha', 'beta', 'res']);
 
                 this.renderProgram = createShaderProgram(gl, basicVS, renderFS);
                 if(!this.renderProgram) { reject(); return; }
@@ -230,6 +238,22 @@ class FluidSimRenderer {
         // b) Advect dye
         this.advect(this.dyeTexture, this.velocityTexture, deltaTime);
         tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
+
+
+        ////////////////////////////////////// Step 2: Diffusion //////////////////////////////////////////////////////
+        let k = this.settings.diffusionStrength * deltaTime;
+
+        // a) Diffuse velocity
+        for(let i = 0; k > 0 && i < this.settings.diffusionIterations; i++){
+            this.jacobi(this.velocityTexture, this.velocityTexture, 4/k, 4/k * (1+k));
+            tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
+        }
+
+        // b) Diffuse dye
+        for(let i = 0; k > 0 && i < this.settings.diffusionIterations; i++){
+            this.jacobi(this.dyeTexture, this.dyeTexture, 4/k, 4/k * (1+k));
+            tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
+        }
 
 
         ////////////////////////////////////// Step 3: External Forces ////////////////////////////////////////////////
@@ -291,9 +315,50 @@ class FluidSimRenderer {
         gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
     }
 
-    
-    jacobi(){
-        // TODO (Chapter 6)    
+    /**
+     * Wrapper for running glsl/jacobi.glsl
+     * Uses Jacobi iteration to solve a system of equations of the form
+     * x^{n+1}_{i, j} = \frac{\alpha * y^{n}_{i,j} + 4 * s^{n+1}_{i,j}}{\beta}
+     * where s is the average value of the cardinal neighbors of x.
+     * 
+     * @param {Texture} x 
+     * @param {Texture} y 
+     * @param {Float} alpha 
+     * @param {Float} beta 
+     */
+    jacobi(x, y, alpha, beta){
+        let gl = this.gl;
+
+        // Use jacobiProgram on the full quad
+        gl.useProgram(this.jacobiProgram);
+        gl.bindVertexArray(this.quad.vao);
+        gl.enableVertexAttribArray(this.jacobiProgram.vertexPositionAttribute);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.quad.buffer);
+        gl.vertexAttribPointer(this.jacobiProgram.vertexPositionAttribute, this.quad.itemSize, gl.FLOAT, false, 0, 0);
+
+        // Set uniforms
+        gl.uniform1i(this.jacobiUniforms.x, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, x);
+
+        if(x === y){
+            gl.uniform1i(this.jacobiUniforms.y, 0);
+        }
+        else{
+            gl.uniform1i(this.jacobiUniforms.y, 1);
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, y);
+        }
+
+        gl.uniform1f(this.jacobiUniforms.alpha, alpha);
+        gl.uniform1f(this.jacobiUniforms.beta, beta);
+        gl.uniform2fv(this.jacobiUniforms.res, this.settings.dataResolution);
+
+        // Render to outputTexture
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
+        gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);    
     }
 
     
