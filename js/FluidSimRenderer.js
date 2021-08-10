@@ -162,8 +162,8 @@ class FluidSimRenderer {
             // Create shader program from sources
             Promise.all( [fetchText('glsl/basicVS.glsl'), fetchText('glsl/forces.glsl'),
                           fetchText('glsl/advection.glsl'), fetchText('glsl/jacobi.glsl'),
-                          fetchText('glsl/render.glsl')] )
-            .then(( [basicVSource, forcesSource, advectSource, jacobiSource, renderSource] ) => {
+                          fetchText('glsl/boundary.glsl'), fetchText('glsl/render.glsl')] )
+            .then(( [basicVSource, forcesSource, advectSource, jacobiSource, boundarySource, renderSource] ) => {
                 
                 // We first create shaders and then shader programs from our gathered sources.
                 // Each operation we want to perform on our data is its own shader program.
@@ -179,6 +179,7 @@ class FluidSimRenderer {
                 let forcesFS = loadShaderFromSource(gl, forcesSource, FRAGMENT_SHADER);
                 let advectFS = loadShaderFromSource(gl, advectSource, FRAGMENT_SHADER);
                 let jacobiFS = loadShaderFromSource(gl, jacobiSource, FRAGMENT_SHADER);
+                let boundaryFS = loadShaderFromSource(gl, boundarySource, FRAGMENT_SHADER);
                 let renderFS = loadShaderFromSource(gl, renderSource, FRAGMENT_SHADER);
 
                 let createUniforms = (program, names) => {
@@ -200,6 +201,10 @@ class FluidSimRenderer {
                 this.jacobiProgram = createShaderProgram(gl, basicVS, jacobiFS);
                 if(!this.jacobiProgram) { reject(); return; }
                 this.jacobiUniforms = createUniforms(this.jacobiProgram, ['x', 'y', 'alpha', 'beta', 'res']);
+
+                this.boundaryProgram = createShaderProgram(gl, basicVS, boundaryFS);
+                if(!this.boundaryProgram) { reject(); return; }
+                this.boundaryUniforms = createUniforms(this.boundaryProgram, ['data', 'res', 'offset', 'scale']);
 
                 this.renderProgram = createShaderProgram(gl, basicVS, renderFS);
                 if(!this.renderProgram) { reject(); return; }
@@ -266,6 +271,11 @@ class FluidSimRenderer {
         const dyeAmount = this.mousedown ? [this.settings.dyeAmount, 0] : [0, 0];
         this.applyForces(this.dyeTexture, this.mouse.pos, dyeAmount, this.settings.drawRadius, deltaTime);
         tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
+    
+        
+        ////////////////////////////////////// Step 5: Boundary Condition ////////////////////////////////////////////////
+        this.enforceBoundary(this.velocityTexture, -1);
+        tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
     }
 
 
@@ -417,8 +427,46 @@ class FluidSimRenderer {
     }
 
 
-    enforceBoundary(){
-        // TODO (Chapter 7)
+    /**
+     * Wrapper for running glsl/boundary.glsl
+     * Sets the boundary cells equal to their inner neighbor's value
+     * multiplied by scale
+     * 
+     * @param {Texture} data 
+     * @param {Float} scale 
+     */
+    enforceBoundary(data, scale){
+        let gl = this.gl;
+
+        // First copy the data texture into outputTexture so that non-boundary pixels remain the same
+        this.copyTexture(data, this.outputTexture);
+
+        // Use boundaryProgram on the full quad
+        gl.useProgram(this.boundaryProgram);
+        gl.bindVertexArray(this.boundary.vao);
+        gl.enableVertexAttribArray(this.boundaryProgram.vertexPositionAttribute);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.boundary.buffer);
+        gl.vertexAttribPointer(this.boundaryProgram.vertexPositionAttribute, this.boundary.itemSize, gl.FLOAT, false, 0, 0);
+
+        // Set uniforms
+        gl.uniform1i(this.boundaryUniforms.data, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, data);
+
+        gl.uniform1f(this.boundaryUniforms.scale, scale);
+        gl.uniform2fv(this.boundaryUniforms.res, this.settings.dataResolution);
+
+        // Render to outputTexture
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
+        
+        // We will need to repeat this process with different offsets for each boundary line
+        let offsets = [[1, 0], [0, -1], [-1, 0], [0, 1]]; // left, top, right, bottom line order (from boundary.data)
+        for(let i = 0; i < 4; i ++){
+            gl.uniform2fv(this.boundaryUniforms.offset, offsets[i]);
+            gl.drawArrays(gl.LINES, i, 2);
+        }
     }
 
 
