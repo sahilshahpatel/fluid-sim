@@ -29,7 +29,7 @@ class FluidSimRenderer {
         this.settings.dyeAmount = 25;                       // Amount of dye used in external forces (in update)
         this.settings.diffusionIterations = 20;             // Number of jacobi iterations for diffusion
         this.settings.diffusionStrength = 1;                // Strength of diffusion
-
+        this.settings.projectionIterations = 40;            // Number of jacobi iterations for pressure calculation
         
         ////////////////////////////////////// Initialize internal fields /////////////////////////////////////////////
         this.requestAnimationFrameID = undefined;           // Used for pausing simulation
@@ -57,6 +57,8 @@ class FluidSimRenderer {
 
         this.dyeTexture      = createTexture();
         this.velocityTexture = createTexture();
+        this.divergenceTexture = createTexture();
+        this.pressureTexture = createTexture();
         this.outputTexture   = createTexture();
 
         
@@ -162,8 +164,10 @@ class FluidSimRenderer {
             // Create shader program from sources
             Promise.all( [fetchText('glsl/basicVS.glsl'), fetchText('glsl/forces.glsl'),
                           fetchText('glsl/advection.glsl'), fetchText('glsl/jacobi.glsl'),
+                          fetchText('glsl/divergence.glsl'), fetchText('glsl/pGradient.glsl'),
                           fetchText('glsl/boundary.glsl'), fetchText('glsl/render.glsl')] )
-            .then(( [basicVSource, forcesSource, advectSource, jacobiSource, boundarySource, renderSource] ) => {
+            .then(( [basicVSource, forcesSource, advectSource, jacobiSource, 
+                divergenceSource, pGradientSource, boundarySource, renderSource] ) => {
                 
                 // We first create shaders and then shader programs from our gathered sources.
                 // Each operation we want to perform on our data is its own shader program.
@@ -179,6 +183,8 @@ class FluidSimRenderer {
                 let forcesFS = loadShaderFromSource(gl, forcesSource, FRAGMENT_SHADER);
                 let advectFS = loadShaderFromSource(gl, advectSource, FRAGMENT_SHADER);
                 let jacobiFS = loadShaderFromSource(gl, jacobiSource, FRAGMENT_SHADER);
+                let divergenceFS = loadShaderFromSource(gl, divergenceSource, FRAGMENT_SHADER);
+                let pGradientFS = loadShaderFromSource(gl, pGradientSource, FRAGMENT_SHADER);
                 let boundaryFS = loadShaderFromSource(gl, boundarySource, FRAGMENT_SHADER);
                 let renderFS = loadShaderFromSource(gl, renderSource, FRAGMENT_SHADER);
 
@@ -201,6 +207,14 @@ class FluidSimRenderer {
                 this.jacobiProgram = createShaderProgram(gl, basicVS, jacobiFS);
                 if(!this.jacobiProgram) { reject(); return; }
                 this.jacobiUniforms = createUniforms(this.jacobiProgram, ['x', 'y', 'alpha', 'beta', 'res']);
+
+                this.divergenceProgram = createShaderProgram(gl, basicVS, divergenceFS);
+                if(!this.divergenceProgram) { reject(); return; }
+                this.divergenceUniforms = createUniforms(this.divergenceProgram, ['field', 'res']);
+
+                this.pGradientProgram = createShaderProgram(gl, basicVS, pGradientFS);
+                if(!this.pGradientProgram) { reject(); return; }
+                this.pGradientUniforms = createUniforms(this.pGradientProgram, ['vel', 'pressure', 'res']);
 
                 this.boundaryProgram = createShaderProgram(gl, basicVS, boundaryFS);
                 if(!this.boundaryProgram) { reject(); return; }
@@ -271,9 +285,29 @@ class FluidSimRenderer {
         const dyeAmount = this.mousedown ? [this.settings.dyeAmount, 0] : [0, 0];
         this.applyForces(this.dyeTexture, this.mouse.pos, dyeAmount, this.settings.drawRadius, deltaTime);
         tmp = this.dyeTexture; this.dyeTexture = this.outputTexture; this.outputTexture = tmp;
-    
         
-        ////////////////////////////////////// Step 5: Boundary Condition ////////////////////////////////////////////////
+
+        ////////////////////////////////////// Step 4: Projection /////////////////////////////////////////////////////
+        // a) Calculate divergence of velocity
+        this.computeDivergence(this.velocityTexture);
+        tmp = this.divergenceTexture; this.divergenceTexture = this.outputTexture; this.outputTexture = tmp;
+
+        // b) Calculate pressure field
+        this.clearTexture(this.pressureTexture);
+        for(let i = 0; i < this.settings.projectionIterations; i++){
+            this.jacobi(this.pressureTexture, this.divergenceTexture, -1, 4);
+            tmp = this.pressureTexture; this.pressureTexture = this.outputTexture; this.outputTexture = tmp;    
+            
+            this.enforceBoundary(this.pressureTexture, 1);
+            tmp = this.pressureTexture; this.pressureTexture = this.outputTexture; this.outputTexture = tmp;
+        }
+        
+        // c) Subtract the pressure gradient
+        this.removeDivergence(this.velocityTexture, this.pressureTexture);
+        tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
+
+
+        ////////////////////////////////////// Step 5: Boundary Condition /////////////////////////////////////////////
         this.enforceBoundary(this.velocityTexture, -1);
         tmp = this.velocityTexture; this.velocityTexture = this.outputTexture; this.outputTexture = tmp;
     }
@@ -412,13 +446,71 @@ class FluidSimRenderer {
     }
 
 
-    computeDivergence(){
-        // TODO (Chapter 7)
+    /**
+     * Wrapper for running glsl/divergence.glsl
+     * Computes the divergence of an input 2D vector field
+     * 
+     * @param {Texture} field
+     */
+    computeDivergence(field){
+        let gl = this.gl;
+
+        // Use divergenceProgram on the full quad
+        gl.useProgram(this.divergenceProgram);
+        gl.bindVertexArray(this.quad.vao);
+        gl.enableVertexAttribArray(this.divergenceProgram.vertexPositionAttribute);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.quad.buffer);
+        gl.vertexAttribPointer(this.divergenceProgram.vertexPositionAttribute, this.quad.itemSize, gl.FLOAT, false, 0, 0);
+
+        // Set uniforms
+        gl.uniform1i(this.divergenceUniforms.field, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, field);
+
+        gl.uniform2fv(this.divergenceUniforms.res, this.settings.dataResolution);
+
+        // Render to outputTexture
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
+        gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
     }
 
 
-    removeDivergence(){
-        // TODO (Chapter 7)
+    /**
+     * Wrapper for glsl/pGradient.glsl
+     * Computes the gradient of the pressure field
+     * and subtracts it from the velocity
+     * 
+     * @param {Texture} vel
+     * @param {Texture} pressure
+     */
+    removeDivergence(vel, pressure){
+        let gl = this.gl;
+
+        // Use forcesProgram on the full quad
+        gl.useProgram(this.pGradientProgram);
+        gl.bindVertexArray(this.quad.vao);
+        gl.enableVertexAttribArray(this.pGradientProgram.vertexPositionAttribute);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.quad.buffer);
+        gl.vertexAttribPointer(this.pGradientProgram.vertexPositionAttribute, this.quad.itemSize, gl.FLOAT, false, 0, 0);
+
+        // Set uniforms
+        gl.uniform1i(this.pGradientUniforms.vel, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, vel);
+
+        gl.uniform1i(this.pGradientUniforms.pressure, 1);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, pressure);
+
+        gl.uniform2fv(this.pGradientUniforms.res, this.settings.dataResolution);
+
+        // Render to outputTexture
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+        gl.viewport(0, 0, ...this.settings.dataResolution);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
+        gl.drawArrays(this.quad.glDrawEnum, 0, this.quad.nItems);
     }
 
 

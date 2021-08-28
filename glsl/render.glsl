@@ -16,4 +16,5 @@ void main(){
     vec2 v = texture(vel, fragUV).xy;
 
     fragColor = vec4(d, v, 1.);
+    fragColor = vec4(d, 0., 0., 1.);
 }
